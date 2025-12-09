@@ -2,17 +2,21 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-09 19:40:56
+@LastEditTime: 2025-12-09 20:43:41
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
 import torch
 
+from qpid.args.__args import Args
+from qpid.base.__baseManager import BaseManager
 from qpid.constant import INPUT_TYPES
 from qpid.model import Model
 from qpid.training import Structure
+from qpid.training.loss import l2
 
+from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor
 
 
@@ -40,12 +44,25 @@ class VermouthModel(Model):
             nei_trajs=nei[..., :self.args.obs_frames//2, :]
         )
 
-        return torch.repeat_interleave(
-            obs[..., -1:, :],
-            repeats=self.args.pred_frames,
-            dim=-2)
+        return (
+            torch.repeat_interleave(
+                obs[..., -1:, :],
+                repeats=self.args.pred_frames,
+                dim=-2
+            ),
+            nei[..., self.args.obs_frames//2:, :],
+            ego_nei_pred,
+        )
 
 
 class Vermouth(Structure):
     MODEL_TYPE = VermouthModel
-    is_trainable = False
+    # is_trainable = False
+
+    def __init__(self, args: list[str] | Args | None = None,
+                 manager: BaseManager | None = None,
+                 name='Train Manager'):
+
+        super().__init__(args, manager, name)
+
+        self.loss.set({l2: 0.6, EgoLoss: 0.4})
