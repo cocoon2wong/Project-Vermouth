@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-09 17:00:41
+@LastEditTime: 2025-12-09 19:40:35
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -26,6 +26,8 @@ class EgoPredictor(torch.nn.Module):
                  feature_dim: int,
                  *args, **kwargs):
 
+        super().__init__(*args, **kwargs)
+
         self.t_h = obs_steps
         self.t_f = pred_steps
 
@@ -42,11 +44,11 @@ class EgoPredictor(torch.nn.Module):
         # Simple trajectory encoder and decoder
         self.encoder = torch.nn.Sequential(
             layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
-            layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
-            layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
-            layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
-            layers.Dense(self.d_traj, self.d, torch.nn.ReLU),
-            layers.Dense(self.d_traj, self.d, torch.nn.Tanh),
+            layers.Dense(self.d, self.d, torch.nn.ReLU),
+            layers.Dense(self.d, self.d, torch.nn.ReLU),
+            layers.Dense(self.d, self.d, torch.nn.ReLU),
+            layers.Dense(self.d, self.d, torch.nn.ReLU),
+            layers.Dense(self.d, self.d, torch.nn.Tanh),
         )
 
         self.decoder = layers.Dense(self.d, self.d_traj)
@@ -57,7 +59,7 @@ class EgoPredictor(torch.nn.Module):
                               nei_trajs], dim=-3)
 
         if ((ego_traj.shape[-2] != self.t_h) or
-            (nei_trajs.shape[-2] != self.t_h)):
+                (nei_trajs.shape[-2] != self.t_h)):
             raise ValueError('Wrong trajectory lengths!')
 
         # Move the last obs point to (0, 0)
@@ -102,6 +104,6 @@ class EgoPredictor(torch.nn.Module):
         pred = self.decoder(f)              # (batch, nei, insights, t_f, dim)
 
         # Move back predictions
-        pred = pred + positions[..., 1:, :, :]
+        pred = pred + positions[..., 1:, None, :, :]
 
         return pred
