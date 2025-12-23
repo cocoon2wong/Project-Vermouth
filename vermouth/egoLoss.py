@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 20:16:15
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-10 10:37:25
+@LastEditTime: 2025-12-23 11:15:59
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -24,8 +24,8 @@ class EgoLoss(BaseLossLayer):
                 inputs: list[torch.Tensor],
                 mask=None, training=None, *args, **kwargs):
 
-        ego_nei_pred = outputs[2]
-        ego_nei_gt = outputs[1]
+        ego_nei_pred = outputs[-1]
+        ego_nei_gt = outputs[-2]
 
         weights = self.model.get_input(inputs, INPUT_TYPES.LOSS_WEIGHT)
         coe = self.coe * weights[:, None] if training else self.coe

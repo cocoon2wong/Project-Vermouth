@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-09 19:40:35
+@LastEditTime: 2025-12-23 16:14:32
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -11,7 +11,7 @@ import torch
 
 from qpid.model import layers
 
-from .utils import KernelLayer
+from .reverberationTransform import KernelLayer
 
 
 class EgoPredictor(torch.nn.Module):
@@ -54,6 +54,8 @@ class EgoPredictor(torch.nn.Module):
         self.decoder = layers.Dense(self.d, self.d_traj)
 
     def forward(self, ego_traj: torch.Tensor, nei_trajs: torch.Tensor):
+        # IMPORTANT: Both `ego_traj` and `nei_trajs` should be absolute values!
+
         # Concat ego and neighbors' trajectories
         trajs = torch.concat([ego_traj[..., None, :, :],
                               nei_trajs], dim=-3)
@@ -63,8 +65,8 @@ class EgoPredictor(torch.nn.Module):
             raise ValueError('Wrong trajectory lengths!')
 
         # Move the last obs point to (0, 0)
-        positions = trajs[..., -1:, :]      # (batch, nei+1, t_h, dim)
-        trajs = trajs - positions
+        ref = trajs[..., -1:, :]      # (batch, nei+1, t_h, dim)
+        trajs = trajs - ref
 
         # Encode features together
         # Including the insight feature and neighbor features
@@ -104,6 +106,6 @@ class EgoPredictor(torch.nn.Module):
         pred = self.decoder(f)              # (batch, nei, insights, t_f, dim)
 
         # Move back predictions
-        pred = pred + positions[..., 1:, None, :, :]
+        pred = pred + ref[..., 1:, None, :, :]
 
         return pred
