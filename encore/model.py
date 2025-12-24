@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 11:04:07
+@LastEditTime: 2025-12-24 11:24:07
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -16,7 +16,7 @@ from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 from qpid.training.loss import l2
 
-from .__args import VermouthArgs
+from .__args import EncoreArgs
 from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor
 from .linearDiffEncoding import LinearDiffEncoding
@@ -24,7 +24,13 @@ from .resonanceLayer import ResonanceLayer
 from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
-class VermouthModel(Model):
+class EncoreModel(Model):
+    """
+    EncoreModel
+    ---
+    The *Encore* trajectory prediction model.
+    """
+
     def __init__(self, structure=None, *args, **kwargs):
         super().__init__(structure, *args, **kwargs)
 
@@ -32,7 +38,7 @@ class VermouthModel(Model):
         self.args._set_default('K', 1)
         self.args._set_default('K_train', 1)
         self.args._set('output_pred_steps', 'all')
-        self.ver_args = self.args.register_subargs(VermouthArgs, 'ver')
+        self.ver_args = self.args.register_subargs(EncoreArgs, 'enc')
         self.v = self.ver_args  # alias
 
         # Set model inputs and labels
@@ -118,18 +124,18 @@ class VermouthModel(Model):
         self.decoder = layers.Dense(self.d, self.M_f)
 
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
-        # -------------
-        # Unpack inputs
-        # -------------
+        # --------------------
+        # MARK: - Preprocesses
+        # --------------------
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
         # Unpacked `x_nei` are relative values, move them back
         x_nei = x_nei + x_ego[..., None, -1:, :]
 
-        # -------------
-        # Ego predictor
-        # -------------
+        # ---------------------
+        # MARK: - Ego predictor
+        # ---------------------
         _h = self.ver_args.ego_t_h
         _f = self.ver_args.ego_t_f
 
@@ -153,9 +159,9 @@ class VermouthModel(Model):
         x_nei_old = x_nei
         x_nei = torch.concat([x_nei[..., -_h:, :], yy_nei], dim=-2)
 
-        # -----------------------------------------
-        # Linear-Difference Encoding and Prediction
-        # -----------------------------------------
+        # ------------------------
+        # MARK: - Embed and Encode
+        # ------------------------
         # Linear prediction (least squares) && Encode difference features
         # Apply to all ego and neighbors' observed trajectories
         x_packed = torch.concat([x_ego[..., None, :, :], x_nei], dim=-3)
@@ -167,9 +173,9 @@ class VermouthModel(Model):
         x_ego_diff = x_ego - x_linear[..., 0, :, :]
         y_ego_linear = y_linear[..., None, 0, :, :]
 
-        # -------------------
-        # Social Interactions
-        # -------------------
+        # ---------------------------
+        # MARK: - Social Interactions
+        # ---------------------------
         f_social, _ = self.resonance(
             x_ego_2d=self.picker.get_center(x_ego)[..., :2],
             x_nei_2d=self.picker.get_center(x_nei)[..., :2],
@@ -177,9 +183,9 @@ class VermouthModel(Model):
             f_nei=f_nei,
         )
 
-        # --------------------
-        # Transformer Backbone
-        # --------------------
+        # ----------------------------
+        # MARK: - Transformer Backbone
+        # ----------------------------
         # Pad features to keep the compatible tensor shape
         # Original shape of `f_ego` is `(batch, T_h, d/2)`
         f_ego_pad = torch.repeat_interleave(f_ego, self.p, -2)
@@ -247,8 +253,8 @@ class VermouthModel(Model):
         return returns
 
 
-class Vermouth(Structure):
-    MODEL_TYPE = VermouthModel
+class Encore(Structure):
+    MODEL_TYPE = EncoreModel
 
     def __init__(self, args: list[str] | Args | None = None,
                  manager: BaseManager | None = None,
@@ -256,6 +262,6 @@ class Vermouth(Structure):
 
         super().__init__(args, manager, name)
 
-        self.ver_args = self.args.register_subargs(VermouthArgs, 'ver')
+        self.ver_args = self.args.register_subargs(EncoreArgs, 'enc')
 
         self.loss.set({l2: 1.0, EgoLoss: self.ver_args.ego_loss_rate})

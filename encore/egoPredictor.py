@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 11:03:20
+@LastEditTime: 2025-12-24 11:25:39
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -83,7 +83,11 @@ class EgoPredictor(torch.nn.Module):
         self.decoder = layers.Dense(self.d, self.D_traj)
 
     def forward(self, ego_traj: torch.Tensor, nei_trajs: torch.Tensor):
-        # IMPORTANT: Both `ego_traj` and `nei_trajs` should be absolute values!
+        """
+        Run the ego predictor.
+        IMPORTANT: Both `ego_traj` and `nei_trajs` should be absolute values, 
+        and share the same sequence length!
+        """
 
         # --------------------
         # MARK: - Preprocesses
@@ -131,9 +135,9 @@ class EgoPredictor(torch.nn.Module):
         f_insight = f_pack[..., 0, :, :]    # (batch, T_h, d)
         f_nei = f_pack[..., 1:, :, :]       # (batch, nei, T_h, d)
 
-        # -----------------
+        # -------------------------
         # MARK: - Latency predictor
-        # -----------------
+        # -------------------------
         # Compute kernels
         # (batch, nei, t_h, t_f)
         rev_kernel = self.reverberation_predictor(f_nei)

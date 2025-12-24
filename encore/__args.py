@@ -10,7 +10,7 @@
 from qpid.args import DYNAMIC, STATIC, TEMPORARY, EmptyArgs
 
 
-class VermouthArgs(EmptyArgs):
+class EncoreArgs(EmptyArgs):
 
     @property
     def Kg(self) -> int:

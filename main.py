@@ -9,8 +9,8 @@
 
 import sys
 
+import encore
 import qpid
-import vermouth
 
 if __name__ == '__main__':
     qpid.entrance(sys.argv)
