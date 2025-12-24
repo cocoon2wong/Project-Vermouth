@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-23 16:04:50
+@LastEditTime: 2025-12-23 16:42:04
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -148,6 +148,7 @@ class VermouthModel(Model):
         yy_nei = torch.mean(yy_nei, dim=-3)
 
         # "Mess Up" the time axis
+        x_nei_old = x_nei
         x_nei = torch.concat([x_nei[..., -_h:, :], yy_nei], dim=-2)
 
         # -----------------------------------------
@@ -234,7 +235,7 @@ class VermouthModel(Model):
 
         if training:
             returns += [
-                x_nei[..., -_f:, :],
+                x_nei_old[..., -_f:, :],
                 yy_nei_train,
             ]
 
