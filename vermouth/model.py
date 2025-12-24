@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 10:03:57
+@LastEditTime: 2025-12-24 11:04:07
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -57,6 +57,7 @@ class VermouthModel(Model):
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim//2,
             noise_depth=self.args.noise_depth,
+            transform=self.ver_args.T,
         )
 
         # Linear difference encoding
@@ -140,13 +141,13 @@ class VermouthModel(Model):
             )  # -> (batch, nei, insights, ego_t_f, dim)
 
         # Normal use of ego predictor
-        yy_nei = self.ego_predictor(
+        yy_nei_original = self.ego_predictor(
             ego_traj=x_ego[..., -_h:, :],
             nei_trajs=x_nei[..., -_h:, :],
         )  # -> (batch, nei, insights, ego_t_f, dim)
 
         # -> (batch, nei, ego_t_f, dim)
-        yy_nei = torch.mean(yy_nei, dim=-3)
+        yy_nei = torch.mean(yy_nei_original, dim=-3)
 
         # "Mess Up" the time axis
         x_nei_old = x_nei
@@ -235,7 +236,6 @@ class VermouthModel(Model):
 
         returns = [
             y_ego,
-            # yy_nei,
         ]
 
         if training:
