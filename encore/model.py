@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 15:45:38
+@LastEditTime: 2025-12-24 16:44:17
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -248,11 +248,25 @@ class EncoreModel(Model):
             y_ego,
         ]
 
+        # Output predictions and labels to compute EgoLoss
         if training:
             returns += [
                 x_nei_old[..., -_f:, :],
                 yy_nei_train,
             ]
+
+        # Visualize ego predictor's outputs
+        # This only works in the playground mode
+        elif v := self.v.vis_ego_predictor:
+            if v == 1:
+                e = torch.flatten(yy_nei_original, -4, -3)
+            elif v == 2:
+                e = yy_nei
+            else:
+                self.log(f'Wrong `vis_ego_predictor` value recevied: {v}!',
+                         level='error', raiseError=ValueError)
+
+            returns[0] = e
 
         return returns
 

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-23 16:20:12
+@LastEditTime: 2025-12-24 16:46:28
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -80,6 +80,22 @@ class EncoreArgs(EmptyArgs):
                          desc_in_model_summary=('Ego predictor',
                                                 'Number of Insights'))
 
+    @property
+    def vis_ego_predictor(self) -> int:
+        """
+        Choose whether to visualize trajectories forecasted by the ego
+        predictior.
+        It accepts three values:
+
+        - `0`: Do nothing;
+        - `1`: Visualize ego predictor's all predictions;
+        - `2`: Visualize ego predictor's mean predicton for each neighbor.
+
+        NOTE that this arg only works in the *Playground* mode, or the program
+        will be killed immediately.
+        """
+        return self._arg('vis_ego_predictor', 0, argtype=TEMPORARY)
+
     def _init_all_args(self):
         super()._init_all_args()
 
@@ -97,4 +113,11 @@ class EncoreArgs(EmptyArgs):
             self.log(f'Illegal partition settings ({self.partitions})! ' +
                      'Please add the arg `--partitions` to set the number of ' +
                      'angle-based partitions.',
+                     level='error', raiseError=ValueError)
+
+        if ((self.vis_ego_predictor)
+                and (self._terminal_args is not None)
+                and ('playground' not in ''.join(self._terminal_args))):
+            self.log('Arg `vis_ego_predictor` can be only used in the ' +
+                     'playground mode!',
                      level='error', raiseError=ValueError)
