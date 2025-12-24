@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-23 16:42:04
+@LastEditTime: 2025-12-24 10:03:57
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -55,7 +55,8 @@ class VermouthModel(Model):
             pred_steps=self.v.ego_t_f,
             insights=self.v.insights,
             traj_dim=self.dim,
-            feature_dim=self.args.feature_dim,
+            feature_dim=self.args.feature_dim//2,
+            noise_depth=self.args.noise_depth,
         )
 
         # Linear difference encoding
@@ -92,7 +93,7 @@ class VermouthModel(Model):
         # Transformer as the feature extractor
         self.p = self.ver_args.partitions
         self.T = transformer.Transformer(
-            num_layers=6,
+            num_layers=5,
             d_model=self.d,
             num_heads=8,
             dff=512,
@@ -212,6 +213,9 @@ class VermouthModel(Model):
                                targets=traj_targets,
                                training=training)
 
+            # -----------------------------
+            # Latency Prediction and Decode
+            # -----------------------------
             # Reverberation kernels and transform
             G = self.k1(f_tran)
             R = self.k2(f_tran)
@@ -231,6 +235,7 @@ class VermouthModel(Model):
 
         returns = [
             y_ego,
+            # yy_nei,
         ]
 
         if training:
