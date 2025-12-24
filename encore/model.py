@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 11:24:07
+@LastEditTime: 2025-12-24 15:45:38
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -66,7 +66,7 @@ class EncoreModel(Model):
             transform=self.ver_args.T,
         )
 
-        # Linear difference encoding
+        # Linear difference encoding (embedding)
         self.linear_diff = LinearDiffEncoding(
             obs_frames=self.args.obs_frames,
             pred_frames=self.args.pred_frames,
@@ -93,21 +93,23 @@ class EncoreModel(Model):
         self.T_h, self.M_h = self.tlayer.Tshape
         self.T_f, self.M_f = self.itlayer.Tshape
 
-        # Noise encoding
+        # Noise embedding
         self.d_noise = self.args.noise_depth
-        self.ie = layers.TrajEncoding(self.d_noise, self.d//2, torch.nn.Tanh)
+        self.noise_embedding = layers.TrajEncoding(self.d_noise,
+                                                   self.d//2,
+                                                   torch.nn.Tanh)
 
         # Transformer as the feature extractor
         self.p = self.ver_args.partitions
         self.T = transformer.Transformer(
             num_layers=5,
-            d_model=self.d,
             num_heads=8,
+            d_model=self.d,
             dff=512,
-            input_vocab_size=self.M_h,
-            target_vocab_size=self.M_h,
             pe_input=self.T_h * self.p,
             pe_target=self.T_h * self.p,
+            input_vocab_size=self.M_h,
+            target_vocab_size=self.M_h,
             include_top=False,
         )
 
@@ -144,12 +146,14 @@ class EncoreModel(Model):
             yy_nei_train = self.ego_predictor(
                 ego_traj=x_ego[..., -(_h + _f):-_f, :],
                 nei_trajs=x_nei[..., -(_h + _f):-_f, :],
+                training=training,
             )  # -> (batch, nei, insights, ego_t_f, dim)
 
         # Normal use of ego predictor
         yy_nei_original = self.ego_predictor(
             ego_traj=x_ego[..., -_h:, :],
             nei_trajs=x_nei[..., -_h:, :],
+            training=training,
         )  # -> (batch, nei, insights, ego_t_f, dim)
 
         # -> (batch, nei, ego_t_f, dim)
@@ -163,7 +167,7 @@ class EncoreModel(Model):
         # MARK: - Embed and Encode
         # ------------------------
         # Linear prediction (least squares) && Encode difference features
-        # Apply to all ego and neighbors' observed trajectories
+        # Apply to both egos' and neighbors' observed trajectories
         x_packed = torch.concat([x_ego[..., None, :, :], x_nei], dim=-3)
         f_diff, x_linear, y_linear = self.linear_diff(x_packed)
 
@@ -201,8 +205,8 @@ class EncoreModel(Model):
 
         # Target value for queries
         # -> (batch, T_h * partitions, M)
-        traj_targets = self.tlayer(x_ego_diff)
-        traj_targets = torch.repeat_interleave(traj_targets, self.p, -2)
+        X_ego_diff = self.tlayer(x_ego_diff)
+        X_ego_diff = torch.repeat_interleave(X_ego_diff, self.p, -2)
 
         all_predictions = []
         repeats = self.args.K_train if training else self.args.K
@@ -210,19 +214,19 @@ class EncoreModel(Model):
             # Assign random ids and embedding -> (batch, steps, d/2)
             z = torch.normal(mean=0, std=1,
                              size=list(f.shape[:-1]) + [self.d_noise])
-            re_f_z = self.ie(z.to(f.device))
+            f_z = self.noise_embedding(z.to(f.device))
 
             # -> (batch, steps, d)
-            re_f_final = torch.concat([f, re_f_z], dim=-1)
+            f_final = torch.concat([f, f_z], dim=-1)
 
             # Transformer backbone -> (batch, steps, d)
-            f_tran, _ = self.T(inputs=re_f_final,
-                               targets=traj_targets,
+            f_tran, _ = self.T(inputs=f_final,
+                               targets=X_ego_diff,
                                training=training)
 
-            # -----------------------------
-            # Latency Prediction and Decode
-            # -----------------------------
+            # -------------------------------------
+            # MARK: - Latency Prediction and Decode
+            # -------------------------------------
             # Reverberation kernels and transform
             G = self.k1(f_tran)
             R = self.k2(f_tran)

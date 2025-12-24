@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 11:25:39
+@LastEditTime: 2025-12-24 15:49:43
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -13,7 +13,8 @@ from qpid.model import layers, transformer
 from qpid.utils import INIT_POSITION as INF
 from qpid.utils import get_mask
 
-from .reverberationTransform import KernelLayer
+from .linearDiffEncoding import LinearDiffEncoding
+from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
 class EgoPredictor(torch.nn.Module):
@@ -46,43 +47,64 @@ class EgoPredictor(torch.nn.Module):
         self.d_noise = noise_depth
         self.insights = insights
 
+        # Layers
         # Transform layers
         t_type, it_type = layers.get_transform_layers(transform)
         self.tlayer = t_type((self.t_h, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
 
-        # Transformed shapes
-        self.T_h, self.D_traj = self.tlayer.Tshape
-        self.T_f, _ = self.itlayer.Tshape
-
         # Simple trajectory encoder
         # Only a simple Transformer encoder, with sampled noise vector
         # It does not consider further interactions among neighbors
-        self.embedding = layers.Dense(self.D_traj, self.d//2, torch.nn.Tanh)
+
+        # Linear difference encoding (embedding)
+        self.linear_diff = LinearDiffEncoding(
+            obs_frames=self.t_h,
+            pred_frames=self.t_f,
+            output_units=self.d//2,
+            transform_layer=self.tlayer,
+        )
+
+        # Transformer backbone
+        # Shapes
+        self.T_h, self.M_h = self.tlayer.Tshape
+        self.T_f, self.M_f = self.itlayer.Tshape
+
+        # Noise embedding
         self.noise_embedding = layers.TrajEncoding(self.d_noise,
                                                    self.d//2,
                                                    torch.nn.Tanh)
 
-        self.encoder = transformer.TransformerEncoder(
+        # Transformer as the feature extractor
+        self.T = transformer.Transformer(
             num_layers=2,
             num_heads=2,
-            dim_model=self.d,
-            dim_forward=256,
-            steps=self.T_h,
-            dim_input=self.D_traj,
-            dim_output=self.D_traj,
+            d_model=self.d,
+            dff=256,
+            pe_input=self.T_h,
+            pe_target=self.T_h,
+            input_vocab_size=self.M_h,
+            target_vocab_size=self.M_h,
             include_top=False,
         )
 
-        # Simple latency predictor, similar to the reverberation transform
-        self.outer = layers.OuterLayer(self.T_h, self.T_h)
-        self.reverberation_predictor = KernelLayer(self.d, self.d, self.T_f)
-        self.insight_predictor = KernelLayer(self.d, self.d, self.insights)
+        # Reverberation kernels and reverberation transform layer
+        self.k1 = KernelLayer(self.d, self.d, self.insights)
+        self.k2 = KernelLayer(self.d, self.d, self.T_f)
 
-        # Simple trajectory decoder
-        self.decoder = layers.Dense(self.d, self.D_traj)
+        self.rev = ReverberationTransform(
+            historical_steps=self.T_h,
+            future_steps=self.T_f,
+        )
 
-    def forward(self, ego_traj: torch.Tensor, nei_trajs: torch.Tensor):
+        # Final output layer
+        self.decoder = layers.Dense(self.d, self.M_f)
+
+    def forward(self, ego_traj: torch.Tensor,
+                nei_trajs: torch.Tensor,
+                training=None,
+                mask=None,
+                *args, **kwargs):
         """
         Run the ego predictor.
         IMPORTANT: Both `ego_traj` and `nei_trajs` should be absolute values, 
@@ -103,82 +125,88 @@ class EgoPredictor(torch.nn.Module):
         _nei_trajs = nei_trajs[..., :max_valid_nei_count, :, :]
 
         # Concat ego and neighbors' trajectories
-        trajs = torch.concat([ego_traj[..., None, :, :],
-                              _nei_trajs], dim=-3)
+        x_packed = torch.concat([ego_traj[..., None, :, :],
+                                 _nei_trajs], dim=-3)
 
         if ((ego_traj.shape[-2] != self.t_h) or
                 (_nei_trajs.shape[-2] != self.t_h)):
             raise ValueError('Wrong trajectory lengths!')
 
         # Move the last obs point to (0, 0)
-        ref = trajs[..., -1:, :]            # (batch, nei+1, T_h, dim)
-        trajs = trajs - ref
-
-        # Transform trajectories
-        spectrums = self.tlayer(trajs)
+        ref = x_packed[..., -1:, :]         # (batch, nei+1, T_h, dim)
+        x_packed = x_packed - ref
 
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
-        # Encode features together
-        # Including the insight feature and neighbor features
-        f_embed = self.embedding(spectrums)
+        # Linear prediction (least squares) && Encode difference features
+        # Apply to both egos' and neighbors' observed trajectories
+        f_diff, x_linear, y_linear = self.linear_diff(x_packed)
 
-        # Assign random ids and embedding
-        z = torch.normal(mean=0, std=1,
-                         size=list(f_embed.shape[:-1]) + [self.d_noise])
-        z_embed = self.noise_embedding(z.to(f_embed.device))
+        x_diff = x_packed - x_linear
+        y_nei_linear = y_linear[..., 1:, None, :, :]
 
-        f_pack = self.encoder(torch.concat([f_embed, z_embed], dim=-1))
+        # ---------------------------
+        # MARK: - Social Interactions
+        # ---------------------------
+        # NOTE: Ego predictor does not consider interactions
 
-        # Unpack features
-        f_insight = f_pack[..., 0, :, :]    # (batch, T_h, d)
-        f_nei = f_pack[..., 1:, :, :]       # (batch, nei, T_h, d)
+        # ----------------------------
+        # MARK: - Transformer Backbone
+        # ----------------------------
+        # Difference features as keys and queries in attention layers
+        f = f_diff
 
-        # -------------------------
-        # MARK: - Latency predictor
-        # -------------------------
-        # Compute kernels
-        # (batch, nei, t_h, t_f)
-        rev_kernel = self.reverberation_predictor(f_nei)
+        # Target value for queries
+        # -> (batch, nei, T_h, M)
+        X_diff = self.tlayer(x_diff)
 
-        # (batch, 1, t_h, insights)
-        ins_kernel = self.insight_predictor(f_insight)[..., None, :, :]
+        all_predictions = []
+        repeats = 1
+        for _ in range(repeats):
+            # Assign random ids and embedding -> (batch, nei, T_h, d/2)
+            z = torch.normal(mean=0, std=1,
+                             size=list(f.shape[:-1]) + [self.d_noise])
+            f_z = self.noise_embedding(z.to(f.device))
 
-        # Predict (like reverberation transform)
-        # Compute similarity
-        f = f_nei                           # (batch, nei, T_h, d)
-        f = torch.transpose(f, -1, -2)      # (batch, nei, d, T_h)
-        f = self.outer(f, f)                # (batch, nei, d, T_h, T_h)
+            # -> (batch, nei, T_h, d)
+            f_final = torch.concat([f, f_z], dim=-1)
 
-        # Apply the reverberation kernel
-        R = rev_kernel[..., None, :, :]     # (batch, nei, 1, T_h, T_f)
-        f = f @ R                           # (batch, nei, d, T_h, T_f)
+            # Transformer backbone -> (batch, nei, T_h, d)
+            f_tran, _ = self.T(inputs=f_final,
+                               targets=X_diff,
+                               training=training)
 
-        # Apply the insight kernel
-        I = ins_kernel[..., None, :, :]     # (batch, 1, 1, T_h, insights)
-        I = torch.transpose(I, -1, -2)      # (batch, 1, 1, insights, T_h)
-        f = I @ f                           # (batch, nei, d, insights, T_f)
+            # -------------------------------------
+            # MARK: - Latency Prediction and Decode
+            # -------------------------------------
+            # Unpack features
+            f_ego = f_tran[..., :1, :, :]
+            f_nei = f_tran[..., 1:, :, :]
 
-        # Sort dimensions
-        f = torch.transpose(f, -1, -3)      # (batch, nei, T_f, insights, d)
-        f = torch.transpose(f, -2, -3)      # (batch, nei, insights, T_f, d)
+            # Reverberation kernels and transform
+            I = self.k1(f_ego)
+            R = self.k2(f_nei)
+            f_rev = self.rev(f_nei, R, I)   # (batch, nei, ins, T_f, d)
 
-        # ---------------------------------
-        # MARK: - Decoder and Postprocesses
-        # ---------------------------------
-        # Decode predictions
-        pred_spectrums = self.decoder(f)    # (batch, nei, insights, T_f, Dim)
+            # Decode predictions
+            y = self.decoder(f_rev)         # (batch, nei, ins, T_f, M)
+            y = self.itlayer(y)             # (batch, nei, ins, t_f, m)
 
-        # Inverse transform
-        pred = self.itlayer(pred_spectrums)  # (batch, nei, insights, t_f, dim)
+            all_predictions.append(y)
+
+        # Stack all outputs -> (batch, nei, ins, t_f, m)
+        y_nei = torch.concat(all_predictions, dim=-3)
+
+        # Final predictions
+        y_nei = y_nei + y_nei_linear
 
         # Move back predictions
-        pred = pred + ref[..., 1:, None, :, :]
+        y_nei = y_nei + ref[..., 1:, None, :, :]
 
         # Add INF paddings for invalid neighbors
-        paddings = INF * torch.ones_like(pred[..., :1, :, :, :])
+        paddings = INF * torch.ones_like(y_nei[..., :1, :, :, :])
         paddings = torch.repeat_interleave(paddings, cut_count, dim=-4)
-        pred = torch.concat([pred, paddings], dim=-4)
+        y_nei = torch.concat([y_nei, paddings], dim=-4)
 
-        return pred
+        return y_nei
