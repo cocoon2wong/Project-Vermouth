@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 19:54:54
+@LastEditTime: 2025-12-25 10:54:34
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -30,6 +30,7 @@ class EgoPredictor(torch.nn.Module):
     def __init__(self, obs_steps: int,
                  pred_steps: int,
                  insights: int,
+                 capacity: int,
                  traj_dim: int,
                  feature_dim: int,
                  noise_depth: int,
@@ -46,6 +47,7 @@ class EgoPredictor(torch.nn.Module):
         self.d_traj = traj_dim
         self.d_noise = noise_depth
         self.insights = insights
+        self.capacity = capacity
 
         # Layers
         # Transform layers
@@ -100,6 +102,12 @@ class EgoPredictor(torch.nn.Module):
         # Final output layer
         self.decoder = layers.Dense(self.d, self.M_f)
 
+        # Linear prediction layer (for out-of-capacity neighbors)
+        self.linear_pred = layers.LinearLayerND(
+            obs_frames=self.t_h,
+            pred_frames=self.t_f,
+        )
+
     def forward(self, x_ego: torch.Tensor,
                 x_nei: torch.Tensor,
                 training=None,
@@ -107,33 +115,60 @@ class EgoPredictor(torch.nn.Module):
                 *args, **kwargs):
         """
         Run the ego predictor.
-        IMPORTANT: Both `ego_traj` and `nei_trajs` should be absolute values, 
+        NOTE: Both `ego_traj` and `nei_trajs` should be absolute values, 
         and share the same sequence length!
         """
+
+        if ((x_ego.shape[-2] != self.t_h) or
+                (x_nei.shape[-2] != self.t_h)):
+            raise ValueError('Wrong trajectory lengths!')
 
         # --------------------
         # MARK: - Preprocesses
         # --------------------
-        # Speed up inference: Remove all-empty neighbors
+        # Repeat and concat ego and neighbors' obs
+        max_nei_count = x_nei.shape[-3]
+        _x_ego = x_ego[..., None, :, :].expand(
+            *x_ego.shape[:-2],
+            max_nei_count,
+            *x_ego.shape[-2:],
+        )
+
+        _x = torch.concat([_x_ego, x_nei], dim=-2)
+
+        # Speed up inference #1: Remove all-empty neighbors
         # Compute max neighbor count within the batch
-        overall_mask = get_mask(torch.sum(torch.abs(x_nei), dim=[-1, -2]))
-        max_valid_idx = torch.max(torch.where(overall_mask == 1)[1])
-        max_valid_nei_count = max_valid_idx + 1
-        cut_count = x_nei.shape[-3] - max_valid_nei_count
+        valid_mask = get_mask(torch.sum(torch.abs(x_nei), dim=[-1, -2]))
 
-        # Cut trajectory matrix
-        _nei_trajs = x_nei[..., :max_valid_nei_count, :, :]
+        # Speed up inference #2: Limit neighbor numbers
+        if self.capacity != -1:
+            # Compute relative distance (at the last obs step)
+            d = torch.norm(x_ego[..., -1:, :] - x_nei[..., -1, :],
+                           p=2, dim=-1)
+            idx = torch.topk(d, self.capacity, dim=-1, largest=False).indices
 
-        # Concat ego and neighbors' trajectories
-        x_packed = torch.concat([x_ego[..., None, :, :],
-                                 _nei_trajs], dim=-3)
+            # Compute the min-distance neighbor mask
+            cap_mask = torch.zeros_like(d)
+            cap_mask = torch.scatter(cap_mask, -1, idx, 1)
+        else:
+            cap_mask = 1
 
-        if ((x_ego.shape[-2] != self.t_h) or
-                (_nei_trajs.shape[-2] != self.t_h)):
-            raise ValueError('Wrong trajectory lengths!')
+        # Compute final mask
+        final_mask = valid_mask * cap_mask
+
+        # Get neighbors to be considered
+        indices = torch.nonzero(final_mask, as_tuple=True)
+        x_picked = _x[indices]
+
+        _x_ego = x_picked[..., :self.t_h, :]
+        _x_nei = x_picked[..., self.t_h:, :]
+
+        # Concat ego and neighbors' trajectories into a `big batch`
+        b = _x_ego.shape[0]
+        x_packed = torch.concat([_x_ego, _x_nei], dim=0)
 
         # Move the last obs point to (0, 0)
-        ref = x_packed[..., -1:, :]         # (batch, nei+1, T_h, dim)
+        ref = x_packed[..., -1:, :]         # (b*2, t_h, dim)
         x_packed = x_packed - ref
 
         # ------------------------
@@ -144,7 +179,7 @@ class EgoPredictor(torch.nn.Module):
         f_diff, x_linear, y_linear = self.linear_diff(x_packed)
 
         x_diff = x_packed - x_linear
-        y_nei_linear = y_linear[..., 1:, None, :, :]
+        y_nei_linear = y_linear[b:, None, :, :]
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -158,21 +193,21 @@ class EgoPredictor(torch.nn.Module):
         f = f_diff
 
         # Target value for queries
-        # -> (batch, nei, T_h, M)
+        # -> (b*2, T_h, M)
         X_diff = self.tlayer(x_diff)
 
         all_predictions = []
         repeats = 1
         for _ in range(repeats):
-            # Assign random ids and embedding -> (batch, nei, T_h, d/2)
+            # Assign random ids and embedding -> (b*2, T_h, d/2)
             z = torch.normal(mean=0, std=1,
                              size=list(f.shape[:-1]) + [self.d_noise])
             f_z = self.noise_embedding(z.to(f.device))
 
-            # -> (batch, nei, T_h, d)
+            # -> (b*2, T_h, d)
             f_final = torch.concat([f, f_z], dim=-1)
 
-            # Transformer backbone -> (batch, nei, T_h, d)
+            # Transformer backbone -> (b*2, T_h, d)
             f_tran, _ = self.T(inputs=f_final,
                                targets=X_diff,
                                training=training)
@@ -181,32 +216,38 @@ class EgoPredictor(torch.nn.Module):
             # MARK: - Latency Prediction and Decode
             # -------------------------------------
             # Unpack features
-            f_ego = f_tran[..., :1, :, :]
-            f_nei = f_tran[..., 1:, :, :]
+            f_ego = f_tran[:b, :, :]
+            f_nei = f_tran[b:, :, :]
 
             # Reverberation kernels and transform
             I = self.k1(f_ego)
             R = self.k2(f_nei)
-            f_rev = self.rev(f_nei, R, I)   # (batch, nei, ins, T_f, d)
+            f_rev = self.rev(f_nei, R, I)   # (b, ins, T_f, d)
 
             # Decode predictions
-            y = self.decoder(f_rev)         # (batch, nei, ins, T_f, M)
-            y = self.itlayer(y)             # (batch, nei, ins, t_f, m)
+            y = self.decoder(f_rev)         # (b, ins, T_f, M)
+            y = self.itlayer(y)             # (b, ins, t_f, m)
 
             all_predictions.append(y)
 
-        # Stack all outputs -> (batch, nei, ins, t_f, m)
+        # Stack all outputs -> (b, ins, t_f, m)
         y_nei = torch.concat(all_predictions, dim=-3)
 
         # Final predictions
         y_nei = y_nei + y_nei_linear
 
         # Move back predictions
-        y_nei = y_nei + ref[..., 1:, None, :, :]
+        y_nei = y_nei + ref[b:, None, :, :]
 
-        # Add INF paddings for invalid neighbors
-        paddings = INF * torch.ones_like(y_nei[..., :1, :, :, :])
-        paddings = torch.repeat_interleave(paddings, cut_count, dim=-4)
-        y_nei = torch.concat([y_nei, paddings], dim=-4)
+        # Run linear prediction for un-masked neighbors
+        y_nei_base = self.linear_pred(x_nei)
+        y_nei_base = y_nei_base[..., None, :, :].expand(
+            *y_nei_base.shape[:-2],
+            self.insights,
+            *y_nei_base.shape[-2:],
+        )
 
-        return y_nei
+        y = y_nei_base.clone()
+        y[indices] = y_nei
+
+        return y

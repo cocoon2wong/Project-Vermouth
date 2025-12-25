@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 20:36:41
+@LastEditTime: 2025-12-25 10:54:43
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -117,6 +117,10 @@ class SocialPredictor(torch.nn.Module):
                 training=None,
                 mask=None,
                 *args, **kwargs):
+        """
+        NOTE: Both `ego_traj` and `nei_trajs` should be absolute values, 
+        and share the same sequence length!
+        """
 
         # ------------------------
         # MARK: - Embed and Encode

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 16:46:28
+@LastEditTime: 2025-12-25 11:01:13
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -70,6 +70,15 @@ class EncoreArgs(EmptyArgs):
         return self._arg('ego_loss_rate', 0.6, STATIC,
                          desc_in_model_summary=('Ego predictor',
                                                 'EgoLoss Weight'))
+
+    @property
+    def ego_capacity(self) -> int:
+        """
+        TODO
+        """
+        return self._arg('ego_capacity', -1, DYNAMIC,
+                         desc_in_model_summary=('Ego predictor',
+                                                'Capacity'))
 
     @property
     def insights(self) -> int:

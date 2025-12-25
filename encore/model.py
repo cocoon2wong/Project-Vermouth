@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 19:53:46
+@LastEditTime: 2025-12-25 10:59:22
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -59,6 +59,7 @@ class EncoreModel(Model):
             obs_steps=self.e.ego_t_h,
             pred_steps=self.e.ego_t_f,
             insights=self.e.insights,
+            capacity=self.e.ego_capacity,
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim//2,
             noise_depth=self.args.noise_depth,
@@ -96,6 +97,17 @@ class EncoreModel(Model):
         # Unpacked `x_nei` are relative values, move them back
         x_nei = x_nei + x_ego[..., None, -1:, :]
 
+        repeats = self.args.K_train if training else self.args.K
+
+        # ---------------------------
+        # MARK: - Intention predictor
+        # ---------------------------
+        y_intention, y_linear = self.intention_predictor(
+            x_ego=x_ego,
+            repeats=repeats,
+            training=training,
+        )
+
         # ---------------------
         # MARK: - Ego predictor
         # ---------------------
@@ -111,26 +123,28 @@ class EncoreModel(Model):
             )  # -> (batch, nei, insights, ego_t_f, dim)
 
         # Normal use of ego predictor
+        # Also predict ego's trajectory
         yy_nei_original = self.ego_predictor(
             x_ego=x_ego[..., -_h:, :],
-            x_nei=x_nei[..., -_h:, :],
+            x_nei=torch.concat([x_ego[..., None, -_h:, :],
+                                x_nei[..., -_h:, :]], dim=-3),
             training=training,
-        )  # -> (batch, nei, insights, ego_t_f, dim)
+        )  # -> (batch, nei+1, insights, ego_t_f, dim)
 
-        # -> (batch, nei, ego_t_f, dim)
-        yy_nei = torch.mean(yy_nei_original, dim=-3)
+        # -> (batch, nei+1, ego_t_f, dim)
+        yy = torch.mean(yy_nei_original, dim=-3)
+        yy_ego = yy[..., 0, :, :]
+        yy_nei = yy[..., 1:, :, :]
 
+        # ------------------------
+        # MARK: - Social predictor
+        # ------------------------
         # "Mess Up" the time axis
+        x_ego_old = x_ego
         x_nei_old = x_nei
+
+        x_ego = torch.concat([x_ego[..., -_h:, :], yy_ego], dim=-2)
         x_nei = torch.concat([x_nei[..., -_h:, :], yy_nei], dim=-2)
-
-        repeats = self.args.K_train if training else self.args.K
-
-        y_intention, y_linear = self.intention_predictor(
-            x_ego=x_ego,
-            repeats=repeats,
-            training=training,
-        )
 
         y_social = self.social_predictor(
             x_ego=x_ego,
