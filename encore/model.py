@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-25 10:59:22
+@LastEditTime: 2025-12-25 11:18:10
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -143,8 +143,9 @@ class EncoreModel(Model):
         x_ego_old = x_ego
         x_nei_old = x_nei
 
-        x_ego = torch.concat([x_ego[..., -_h:, :], yy_ego], dim=-2)
-        x_nei = torch.concat([x_nei[..., -_h:, :], yy_nei], dim=-2)
+        r = self.args.obs_frames - self.enc_args.ego_t_f
+        x_ego = torch.concat([x_ego[..., -r:, :], yy_ego], dim=-2)
+        x_nei = torch.concat([x_nei[..., -r:, :], yy_nei], dim=-2)
 
         y_social = self.social_predictor(
             x_ego=x_ego,

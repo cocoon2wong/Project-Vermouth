@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-25 10:54:34
+@LastEditTime: 2025-12-29 15:22:58
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -10,7 +10,6 @@
 import torch
 
 from qpid.model import layers, transformer
-from qpid.utils import INIT_POSITION as INF
 from qpid.utils import get_mask
 
 from .linearDiffEncoding import LinearDiffEncoding
@@ -141,7 +140,7 @@ class EgoPredictor(torch.nn.Module):
         valid_mask = get_mask(torch.sum(torch.abs(x_nei), dim=[-1, -2]))
 
         # Speed up inference #2: Limit neighbor numbers
-        if self.capacity != -1:
+        if self.capacity > 0:
             # Compute relative distance (at the last obs step)
             d = torch.norm(x_ego[..., -1:, :] - x_nei[..., -1, :],
                            p=2, dim=-1)
@@ -247,6 +246,7 @@ class EgoPredictor(torch.nn.Module):
             *y_nei_base.shape[-2:],
         )
 
+        # Replace masked neighbors' predictions
         y = y_nei_base.clone()
         y[indices] = y_nei
 
