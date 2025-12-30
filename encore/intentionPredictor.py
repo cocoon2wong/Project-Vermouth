@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-24 20:01:01
+@LastEditTime: 2025-12-30 20:16:55
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -26,6 +26,7 @@ class IntentionPredictor(torch.nn.Module):
 
     def __init__(self, obs_steps: int,
                  pred_steps: int,
+                 ego_pred_steps: int,
                  generations: int,
                  traj_dim: int,
                  feature_dim: int,
@@ -38,6 +39,7 @@ class IntentionPredictor(torch.nn.Module):
         # Parameters
         self.t_h = obs_steps
         self.t_f = pred_steps
+        self.ego_t_f = ego_pred_steps
 
         self.d = feature_dim
         self.d_traj = traj_dim
@@ -47,13 +49,13 @@ class IntentionPredictor(torch.nn.Module):
         # Layers
         # Transform layers
         t_type, it_type = layers.get_transform_layers(transform)
-        self.tlayer = t_type((self.t_h, self.d_traj))
+        self.tlayer = t_type((self.t_h + self.ego_t_f, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
 
         # Linear difference encoding (embedding)
         self.linear_diff = LinearDiffEncoding(
-            obs_frames=self.t_h,
-            pred_frames=self.t_f,
+            obs_frames=self.t_h + self.ego_t_f,
+            pred_frames=self.t_f,       # This is actually not used
             output_units=self.d//2,
             transform_layer=self.tlayer,
         )
@@ -103,9 +105,10 @@ class IntentionPredictor(torch.nn.Module):
         # MARK: - Embed and Encode
         # ------------------------
         # Linear prediction (least squares) && Encode difference features
-        f_diff, x_linear, y_linear = self.linear_diff(x_ego)
+        f_ego_diff, x_ego_linear, _ = self.linear_diff(x_ego)
 
-        x_diff = x_ego - x_linear
+        x_ego_diff = x_ego - x_ego_linear
+        x_ego_diff_mean = torch.mean(x_ego_diff, dim=-3)
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -115,12 +118,15 @@ class IntentionPredictor(torch.nn.Module):
         # ----------------------------
         # MARK: - Transformer Backbone
         # ----------------------------
+        # "Max pool" features on all insights
+        f_ego_pooled = torch.max(f_ego_diff, dim=-3)[0]
+
         # Difference features as keys and queries in attention layers
-        f = f_diff
+        f = f_ego_pooled
 
         # Target value for queries
         # -> (batch, T_h, M)
-        X_diff = self.tlayer(x_diff)
+        X_ego_diff = self.tlayer(x_ego_diff_mean)
 
         all_predictions = []
         for _ in range(repeats):
@@ -134,7 +140,7 @@ class IntentionPredictor(torch.nn.Module):
 
             # Transformer backbone -> (batch, steps, d)
             f_tran, _ = self.T(inputs=f_final,
-                               targets=X_diff,
+                               targets=X_ego_diff,
                                training=training)
 
             # -------------------------------------
@@ -154,4 +160,4 @@ class IntentionPredictor(torch.nn.Module):
         # Stack all outputs -> (batch, K, t_f, m)
         y_ego = torch.concat(all_predictions, dim=-3)
 
-        return y_ego, y_linear
+        return y_ego

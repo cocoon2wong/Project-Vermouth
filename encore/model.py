@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 15:37:48
+@LastEditTime: 2025-12-30 20:14:16
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -50,7 +50,12 @@ class EncoreModel(Model):
         self.tlayer = t_type((self.args.obs_frames, self.dim))
         self.itlayer = it_type((self.args.pred_frames, self.dim))
 
-        # Ego predictor
+        # Predictors
+        self.linear_predictor = layers.LinearLayerND(
+            obs_frames=self.args.obs_frames,
+            pred_frames=self.args.pred_frames,
+        )
+
         if self.e.ego_t_f + self.e.ego_t_h > self.args.obs_frames:
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
                      level='error', raiseError=ValueError)
@@ -69,6 +74,7 @@ class EncoreModel(Model):
         self.intention_predictor = IntentionPredictor(
             obs_steps=self.args.obs_frames,
             pred_steps=self.args.pred_frames,
+            ego_pred_steps=self.e.ego_t_f,
             generations=self.e.Kg,
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim,
@@ -100,14 +106,10 @@ class EncoreModel(Model):
 
         repeats = self.args.K_train if training else self.args.K
 
-        # ---------------------------
-        # MARK: - Intention predictor
-        # ---------------------------
-        y_intention, y_linear = self.intention_predictor(
-            x_ego=x_ego,
-            repeats=repeats,
-            training=training,
-        )
+        # -------------------------
+        # MARK: - Linear prediction
+        # -------------------------
+        y_linear = self.linear_predictor(x_ego)
 
         # ---------------------
         # MARK: - Ego predictor
@@ -125,26 +127,48 @@ class EncoreModel(Model):
 
         # Normal use of ego predictor
         # Also predict ego's trajectory
-        yy_nei_original = self.ego_predictor(
+        x_s = self.ego_predictor(
             x_ego=x_ego[..., -_h:, :],
             x_nei=torch.concat([x_ego[..., None, -_h:, :],
                                 x_nei[..., -_h:, :]], dim=-3),
             training=training,
         )  # -> (batch, nei+1, insights, ego_t_f, dim)
 
-        # -> (batch, nei+1, ego_t_f, dim)
-        yy = torch.mean(yy_nei_original, dim=-3)
-        yy_ego = yy[..., 0, :, :]
-        yy_nei = yy[..., 1:, :, :]
+        # Unpack ego predictor's predictions
+        x_ego_s = x_s[..., 0, :, :, :]
+        x_nei_s = x_s[..., 1:, :, :, :]
+
+        # Concat observations and short-term predictions
+        x_ego_multi = x_ego[..., None, :, :].expand(
+            *x_ego.shape[:-2],
+            self.e.insights,
+            *x_ego.shape[-2:],
+        )
+
+        x_nei_multi = x_nei[..., None, :, :].expand(
+            *x_nei.shape[:-2],
+            self.e.insights,
+            *x_nei.shape[-2:],
+        )
+
+        x_ego_extended = torch.concat([x_ego_multi, x_ego_s], dim=-2)
+        x_nei_extended = torch.concat([x_nei_multi, x_nei_s], dim=-2)
+
+        # ---------------------------
+        # MARK: - Intention predictor
+        # ---------------------------
+        y_intention = self.intention_predictor(
+            x_ego=x_ego_extended,
+            repeats=repeats,
+            training=training,
+        )
 
         # ------------------------
         # MARK: - Social predictor
         # ------------------------
         y_social = self.social_predictor(
-            x_ego=x_ego,
-            x_nei=x_nei,
-            x_ego_s=yy_nei_original[..., 0, :, :, :],
-            x_nei_s=yy_nei_original[..., 1:, :, :, :],
+            x_ego=x_ego_extended,
+            x_nei=x_nei_extended,
             repeats=repeats,
             picker=self.picker,
             training=training,
@@ -168,9 +192,10 @@ class EncoreModel(Model):
         # This only works in the playground mode
         elif v := self.e.vis_ego_predictor:
             if v == 1:
-                e = torch.flatten(yy_nei_original, -4, -3)
+                e = torch.flatten(x_s, -4, -3)
             elif v == 2:
-                e = yy_nei
+                yy = torch.mean(x_s, dim=-3)
+                e = yy[..., 1:, :, :]
             else:
                 self.log(f'Wrong `vis_ego_predictor` value recevied: {v}!',
                          level='error', raiseError=ValueError)
