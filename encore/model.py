@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-25 11:18:10
+@LastEditTime: 2025-12-30 10:33:21
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -79,6 +79,7 @@ class EncoreModel(Model):
         self.social_predictor = SocialPredictor(
             obs_steps=self.args.obs_frames,
             pred_steps=self.args.pred_frames,
+            ego_pred_steps=self.e.ego_t_f,
             partitions=self.e.partitions,
             generations=self.e.Kg,
             traj_dim=self.dim,
@@ -139,17 +140,11 @@ class EncoreModel(Model):
         # ------------------------
         # MARK: - Social predictor
         # ------------------------
-        # "Mess Up" the time axis
-        x_ego_old = x_ego
-        x_nei_old = x_nei
-
-        r = self.args.obs_frames - self.enc_args.ego_t_f
-        x_ego = torch.concat([x_ego[..., -r:, :], yy_ego], dim=-2)
-        x_nei = torch.concat([x_nei[..., -r:, :], yy_nei], dim=-2)
-
         y_social = self.social_predictor(
             x_ego=x_ego,
             x_nei=x_nei,
+            y_ego_short=yy_nei_original[..., 0, :, :, :],
+            y_nei_short=yy_nei_original[..., 1:, :, :, :],
             repeats=repeats,
             picker=self.picker,
             training=training,
@@ -165,7 +160,7 @@ class EncoreModel(Model):
         # Output predictions and labels to compute EgoLoss
         if training:
             returns += [
-                x_nei_old[..., -_f:, :],
+                x_nei[..., -_f:, :],
                 yy_nei_train,
             ]
 

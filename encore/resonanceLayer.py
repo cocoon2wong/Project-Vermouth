@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-23 10:22:15
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-23 11:28:54
+@LastEditTime: 2025-12-30 09:55:56
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -95,9 +95,6 @@ class ResonanceLayer(torch.nn.Module):
         non_self_mask = (f_distance > 0.005).to(torch.int32)
         final_mask = nei_mask * non_self_mask
 
-        # Axis bias when computing
-        j = -1
-
         # Angle-based pooling
         pos_list: list[list[torch.Tensor]] = []
         re_list: list[torch.Tensor] = []
@@ -106,28 +103,28 @@ class ResonanceLayer(torch.nn.Module):
 
         for _p in range(self.p):
             _mask = (partition_indices == _p).to(torch.float32)
-            _mask_count = torch.sum(_mask, dim=-1+j)
+            _mask_count = torch.sum(_mask, dim=-2)
 
             n = _mask_count + 0.0001
 
             pos_list.append([])
-            pos_list[-1].append(torch.sum(f_distance * _mask, dim=-1+j) / n)
-            pos_list[-1].append(torch.sum(f_angle * _mask, dim=-1+j) / n)
-            re_list.append(torch.sum(f_re * _mask[..., None], dim=-2+j) /
+            pos_list[-1].append(torch.sum(f_distance * _mask, dim=-2) / n)
+            pos_list[-1].append(torch.sum(f_angle * _mask, dim=-2) / n)
+            re_list.append(torch.sum(f_re * _mask[..., None], dim=-3) /
                            n[..., None])
 
         # Stack all partitions
-        # (batch, (steps), partitions, 2)
+        # (batch, steps, partitions, 2)
         positions = torch.stack([torch.stack(i, dim=-1) for i in pos_list],
                                 dim=-2)
 
-        # (batch, (steps), partitions, d/2)
+        # (batch, steps, partitions, d/2)
         re_partitions = torch.stack(re_list, dim=-2)
 
-        # Encode circle components -> (batch, (steps), partition, d/2)
+        # Encode circle components -> (batch, steps, partition, d/2)
         f_pos = self.ce(positions)
 
-        # Concat resonance features -> (batch, (steps), partition, d)
+        # Concat resonance features -> (batch, steps, partition, d)
         re_matrix = torch.concat([re_partitions, f_pos], dim=-1)
 
         return re_matrix, f_re
