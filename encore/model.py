@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 10:33:21
+@LastEditTime: 2025-12-30 15:37:48
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -143,8 +143,8 @@ class EncoreModel(Model):
         y_social = self.social_predictor(
             x_ego=x_ego,
             x_nei=x_nei,
-            y_ego_short=yy_nei_original[..., 0, :, :, :],
-            y_nei_short=yy_nei_original[..., 1:, :, :, :],
+            x_ego_s=yy_nei_original[..., 0, :, :, :],
+            x_nei_s=yy_nei_original[..., 1:, :, :, :],
             repeats=repeats,
             picker=self.picker,
             training=training,
