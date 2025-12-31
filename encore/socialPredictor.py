@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 19:50:04
+@LastEditTime: 2025-12-31 12:35:04
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -15,6 +15,7 @@ from qpid.model import layers, transformer
 from .linearDiffEncoding import LinearDiffEncoding
 from .resonanceLayer import ResonanceLayer
 from .reverberationTransform import KernelLayer, ReverberationTransform
+from .utils import repeat
 
 
 class SocialPredictor(torch.nn.Module):
@@ -164,7 +165,7 @@ class SocialPredictor(torch.nn.Module):
 
         # Pad features to keep the compatible tensor shape
         # Original shape of `f_ego` is `(batch, T_h, d/2)`
-        f_ego_pad = torch.repeat_interleave(f_ego_pooled, self.p, -2)
+        f_ego_pad = repeat(f_ego_pooled, self.p, -2)
 
         # Original shape of `f_social` is `(batch, T_h, partitions, d/2)`
         f_social_pad = torch.flatten(f_social_pooled, -3, -2)
@@ -177,8 +178,8 @@ class SocialPredictor(torch.nn.Module):
 
         # Target value for queries
         # -> (batch, T_h * partitions, M)
-        X_ego_diff = self.tlayer(x_ego_diff_mean)
-        X_ego_diff = torch.repeat_interleave(X_ego_diff, self.p, -2)
+        X_ego_diff = self.tlayer(x_ego_diff_mean)   # (batch, T_h, M)
+        X_ego_diff = repeat(X_ego_diff, self.p, -2)
 
         all_predictions = []
         for _ in range(repeats):

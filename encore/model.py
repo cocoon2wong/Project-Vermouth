@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 20:14:16
+@LastEditTime: 2025-12-31 11:49:07
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -21,6 +21,7 @@ from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor
 from .intentionPredictor import IntentionPredictor
 from .socialPredictor import SocialPredictor
+from .utils import repeat
 
 
 class EncoreModel(Model):
@@ -139,17 +140,8 @@ class EncoreModel(Model):
         x_nei_s = x_s[..., 1:, :, :, :]
 
         # Concat observations and short-term predictions
-        x_ego_multi = x_ego[..., None, :, :].expand(
-            *x_ego.shape[:-2],
-            self.e.insights,
-            *x_ego.shape[-2:],
-        )
-
-        x_nei_multi = x_nei[..., None, :, :].expand(
-            *x_nei.shape[:-2],
-            self.e.insights,
-            *x_nei.shape[-2:],
-        )
+        x_ego_multi = repeat(x_ego[..., None, :, :], self.e.insights, -3)
+        x_nei_multi = repeat(x_nei[..., None, :, :], self.e.insights, -3)
 
         x_ego_extended = torch.concat([x_ego_multi, x_ego_s], dim=-2)
         x_nei_extended = torch.concat([x_nei_multi, x_nei_s], dim=-2)
