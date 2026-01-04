@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-29 15:22:58
+@LastEditTime: 2026-01-04 15:51:29
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -36,7 +36,7 @@ class EgoPredictor(torch.nn.Module):
                  transform: str,
                  *args, **kwargs):
 
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
         # Parameters
         self.t_h = obs_steps
@@ -251,3 +251,41 @@ class EgoPredictor(torch.nn.Module):
         y[indices] = y_nei
 
         return y
+
+
+class LinearEgoPredictor(torch.nn.Module):
+    """
+    LinearEgoPredictor
+    ---
+    This is the simple linear-prediction-based ego predictor,
+    only used for ablations and discussions.
+    """
+
+    def __init__(self, obs_steps: int,
+                 pred_steps: int,
+                 insights: int,
+                 *args, **kwargs):
+
+        super().__init__()
+
+        # Parameters
+        self.t_h = obs_steps
+        self.t_f = pred_steps
+        self.insights = insights
+
+        # Layers
+        self.linear_pred = layers.LinearLayerND(
+            obs_frames=self.t_h,
+            pred_frames=self.t_f,
+        )
+
+    def forward(self, x_nei: torch.Tensor, *args, **kwargs):
+
+        y_nei = self.linear_pred(x_nei)
+        y_nei = y_nei[..., None, :, :].expand(
+            *y_nei.shape[:-2],
+            self.insights,
+            *y_nei.shape[-2:],
+        )
+
+        return y_nei

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 20:16:55
+@LastEditTime: 2026-01-04 15:48:53
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -34,7 +34,7 @@ class IntentionPredictor(torch.nn.Module):
                  transform: str,
                  *args, **kwargs):
 
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
         # Parameters
         self.t_h = obs_steps

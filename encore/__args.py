@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-25 11:01:13
+@LastEditTime: 2026-01-04 15:50:47
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -11,6 +11,10 @@ from qpid.args import DYNAMIC, STATIC, TEMPORARY, EmptyArgs
 
 
 class EncoreArgs(EmptyArgs):
+
+    # ---------------------
+    # MARK: - Model Configs
+    # ---------------------
 
     @property
     def Kg(self) -> int:
@@ -74,7 +78,17 @@ class EncoreArgs(EmptyArgs):
     @property
     def ego_capacity(self) -> int:
         """
-        TODO
+        The number of neighbors (`N`) to be "well-forecasted" by the ego
+        predictor. When there are more numbers of neighbors than this value
+        in the scene, the ego predictor will choose the most-`N` closed
+        neighbors in relation to the ego agent to run the full-size prediction,
+        while other neighbors will be forecasted using a simple linear
+        predictor.
+
+        **Ablation Settings:**
+        Note that the full-size Transformer-based ego predictor will be
+        constructed and used for prediction only when `N > 0`. A linear
+        predictor will be used for all neighbors when `N` is set to `0`.
         """
         return self._arg('ego_capacity', -1, DYNAMIC,
                          desc_in_model_summary=('Ego predictor',
@@ -83,11 +97,21 @@ class EncoreArgs(EmptyArgs):
     @property
     def insights(self) -> int:
         """
-        The number of insights in the ego predictor.
+        The number of "insights" (`I`) in the ego predictor. The full-size ego
+        predictor will forecast `I` short-term trajectories for each neighbor
+        within its capacity.
         """
         return self._arg('insights', 5, STATIC,
                          desc_in_model_summary=('Ego predictor',
                                                 'Number of Insights'))
+
+    # ---------------------
+    # MARK: - Ablation Args
+    # ---------------------
+
+    # ----------------
+    # MARK: - Vis Args
+    # ----------------
 
     @property
     def vis_ego_predictor(self) -> int:

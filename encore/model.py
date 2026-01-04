@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-31 11:49:07
+@LastEditTime: 2026-01-04 15:44:18
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -18,7 +18,7 @@ from qpid.training.loss import l2
 
 from .__args import EncoreArgs
 from .egoLoss import EgoLoss
-from .egoPredictor import EgoPredictor
+from .egoPredictor import EgoPredictor, LinearEgoPredictor
 from .intentionPredictor import IntentionPredictor
 from .socialPredictor import SocialPredictor
 from .utils import repeat
@@ -61,7 +61,12 @@ class EncoreModel(Model):
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
                      level='error', raiseError=ValueError)
 
-        self.ego_predictor = EgoPredictor(
+        if self.e.ego_capacity == 0:
+            ego_predictor_type = LinearEgoPredictor
+        else:
+            ego_predictor_type = EgoPredictor
+
+        self.ego_predictor = ego_predictor_type(
             obs_steps=self.e.ego_t_h,
             pred_steps=self.e.ego_t_f,
             insights=self.e.insights,
@@ -206,6 +211,7 @@ class Encore(Structure):
 
         super().__init__(args, manager, name)
 
-        self.ver_args = self.args.register_subargs(EncoreArgs, 'enc')
+        ver_args = self.args.register_subargs(EncoreArgs, 'enc')
 
-        self.loss.set({l2: 1.0, EgoLoss: self.ver_args.ego_loss_rate})
+        if ver_args.ego_capacity != 0:
+            self.loss.set({l2: 1.0, EgoLoss: ver_args.ego_loss_rate})
