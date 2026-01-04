@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 15:50:47
+@LastEditTime: 2026-01-04 20:19:27
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -108,6 +108,16 @@ class EncoreArgs(EmptyArgs):
     # ---------------------
     # MARK: - Ablation Args
     # ---------------------
+    @property
+    def use_linear(self) -> int:
+        """
+        **Ablation Settings:**
+        (bool) Choose whether use the linear prediction as the base of all
+        other predictions.
+        """
+        return self._arg('use_linear', 1, STATIC,
+                         desc_in_model_summary=('Ablation Settings',
+                                                'Use linear prediction base'))
 
     # ----------------
     # MARK: - Vis Args

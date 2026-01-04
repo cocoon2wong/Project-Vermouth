@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 15:44:18
+@LastEditTime: 2026-01-04 20:21:48
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -115,7 +115,10 @@ class EncoreModel(Model):
         # -------------------------
         # MARK: - Linear prediction
         # -------------------------
-        y_linear = self.linear_predictor(x_ego)
+        if self.e.use_linear:
+            y_linear = self.linear_predictor(x_ego)
+        else:
+            y_linear = 0
 
         # ---------------------
         # MARK: - Ego predictor
