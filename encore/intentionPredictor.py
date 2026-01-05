@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 15:48:53
+@LastEditTime: 2026-01-05 18:50:32
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -11,7 +11,6 @@ import torch
 
 from qpid.model import layers, transformer
 
-from .linearDiffEncoding import LinearDiffEncoding
 from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
@@ -52,14 +51,6 @@ class IntentionPredictor(torch.nn.Module):
         self.tlayer = t_type((self.t_h + self.ego_t_f, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
 
-        # Linear difference encoding (embedding)
-        self.linear_diff = LinearDiffEncoding(
-            obs_frames=self.t_h + self.ego_t_f,
-            pred_frames=self.t_f,       # This is actually not used
-            output_units=self.d//2,
-            transform_layer=self.tlayer,
-        )
-
         # Transformer backbone
         # Shapes
         self.T_h, self.M_h = self.tlayer.Tshape
@@ -95,20 +86,12 @@ class IntentionPredictor(torch.nn.Module):
         # Final output layer
         self.decoder = layers.Dense(self.d, self.M_f)
 
-    def forward(self, x_ego: torch.Tensor,
+    def forward(self, f_ego: torch.Tensor,
+                targets: torch.Tensor,
                 repeats: int,
                 training=None,
                 mask=None,
                 *args, **kwargs):
-
-        # ------------------------
-        # MARK: - Embed and Encode
-        # ------------------------
-        # Linear prediction (least squares) && Encode difference features
-        f_ego_diff, x_ego_linear, _ = self.linear_diff(x_ego)
-
-        x_ego_diff = x_ego - x_ego_linear
-        x_ego_diff_mean = torch.mean(x_ego_diff, dim=-3)
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -119,45 +102,33 @@ class IntentionPredictor(torch.nn.Module):
         # MARK: - Transformer Backbone
         # ----------------------------
         # "Max pool" features on all insights
-        f_ego_pooled = torch.max(f_ego_diff, dim=-3)[0]
-
-        # Difference features as keys and queries in attention layers
-        f = f_ego_pooled
-
-        # Target value for queries
-        # -> (batch, T_h, M)
-        X_ego_diff = self.tlayer(x_ego_diff_mean)
+        f_ego = torch.max(f_ego, dim=-3)[0]
 
         all_predictions = []
         for _ in range(repeats):
             # Assign random ids and embedding -> (batch, steps, d/2)
             z = torch.normal(mean=0, std=1,
-                             size=list(f.shape[:-1]) + [self.d_noise])
-            f_z = self.noise_embedding(z.to(f.device))
-
-            # -> (batch, steps, d)
-            f_final = torch.concat([f, f_z], dim=-1)
+                             size=list(f_ego.shape[:-1]) + [self.d_noise])
+            f_z = self.noise_embedding(z.to(f_ego.device))
 
             # Transformer backbone -> (batch, steps, d)
-            f_tran, _ = self.T(inputs=f_final,
-                               targets=X_ego_diff,
-                               training=training)
+            y, _ = self.T(inputs=torch.concat([f_ego, f_z], dim=-1),
+                          targets=targets,
+                          training=training)
 
             # -------------------------------------
             # MARK: - Latency Prediction and Decode
             # -------------------------------------
             # Reverberation kernels and transform
-            G = self.k1(f_tran)
-            R = self.k2(f_tran)
-            f_rev = self.rev(f_tran, R, G)          # (batch, K_g, T_f, d)
+            G = self.k1(y)
+            R = self.k2(y)
+            y = self.rev(y, R, G)          # (batch, K_g, T_f, d)
 
             # Decode predictions
-            y = self.decoder(f_rev)                 # (batch, K_g, T_f, M)
+            y = self.decoder(y)                 # (batch, K_g, T_f, M)
             y = self.itlayer(y)                     # (batch, K_g, t_f, m)
 
             all_predictions.append(y)
 
         # Stack all outputs -> (batch, K, t_f, m)
-        y_ego = torch.concat(all_predictions, dim=-3)
-
-        return y_ego
+        return torch.concat(all_predictions, dim=-3)

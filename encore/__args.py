@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 20:19:27
+@LastEditTime: 2026-01-05 19:05:25
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -105,6 +105,16 @@ class EncoreArgs(EmptyArgs):
                          desc_in_model_summary=('Ego predictor',
                                                 'Number of Insights'))
 
+    @property
+    def encode_agent_types(self) -> int:
+        """
+        Choose whether to encode the type name of each agent.
+        It is mainly used in multi-type-agent prediction scenes, providing
+        a unique type-coding for each type of agents when encoding their
+        trajectories.
+        """
+        return self._arg('encode_agent_types', 0, argtype=STATIC)
+
     # ---------------------
     # MARK: - Ablation Args
     # ---------------------
@@ -112,12 +122,23 @@ class EncoreArgs(EmptyArgs):
     def use_linear(self) -> int:
         """
         **Ablation Settings:**
-        (bool) Choose whether use the linear prediction as the base of all
+        (bool) Choose whether to use the linear prediction as the base of all
         other predictions.
         """
         return self._arg('use_linear', 1, STATIC,
                          desc_in_model_summary=('Ablation Settings',
                                                 'Use linear prediction base'))
+
+    @property
+    def use_intention_predictor(self) -> int:
+        """
+        **Ablation Settings:**
+        (bool) Choose whether to use the intention prediction as one of the model
+        predictions.
+        """
+        return self._arg('use_intention_predictor', 1, STATIC,
+                         desc_in_model_summary=('Ablation Settings',
+                                                'Use intention predictor'))
 
     # ----------------
     # MARK: - Vis Args

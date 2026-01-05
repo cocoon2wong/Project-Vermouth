@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-23 10:22:15
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-30 09:55:56
+@LastEditTime: 2026-01-05 19:01:45
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -65,10 +65,10 @@ class ResonanceLayer(torch.nn.Module):
                 f_nei: torch.Tensor):
 
         # Compute meta resonance features (for each neighbor)
-        f = f_ego[..., None, :, :] * f_nei   # -> (batch, N, obs, d)
+        f_nei = f_ego[..., None, :, :] * f_nei   # -> (batch, N, obs, d)
 
         # Shape of the final output `f_re`: (batch, N, obs, d/2)
-        f_re = self.fc3(self.fc2(self.fc1(f)))
+        f_nei = self.fc3(self.fc2(self.fc1(f_nei)))
 
         # Compute positional information in a SocialCircle-like way
         # Time-resolution of the used transform
@@ -97,7 +97,7 @@ class ResonanceLayer(torch.nn.Module):
 
         # Angle-based pooling
         pos_list: list[list[torch.Tensor]] = []
-        re_list: list[torch.Tensor] = []
+        y = []
         partition_indices = (partition_indices * final_mask +
                              -1 * (1 - final_mask))
 
@@ -110,21 +110,18 @@ class ResonanceLayer(torch.nn.Module):
             pos_list.append([])
             pos_list[-1].append(torch.sum(f_distance * _mask, dim=-2) / n)
             pos_list[-1].append(torch.sum(f_angle * _mask, dim=-2) / n)
-            re_list.append(torch.sum(f_re * _mask[..., None], dim=-3) /
-                           n[..., None])
+            y.append(torch.sum(f_nei * _mask[..., None], dim=-3) /
+                     n[..., None])
 
         # Stack all partitions
         # (batch, steps, partitions, 2)
         positions = torch.stack([torch.stack(i, dim=-1) for i in pos_list],
                                 dim=-2)
 
-        # (batch, steps, partitions, d/2)
-        re_partitions = torch.stack(re_list, dim=-2)
-
-        # Encode circle components -> (batch, steps, partition, d/2)
-        f_pos = self.ce(positions)
-
         # Concat resonance features -> (batch, steps, partition, d)
-        re_matrix = torch.concat([re_partitions, f_pos], dim=-1)
+        y = torch.concat([
+            torch.stack(y, dim=-2),     # (batch, steps, partitions, d/2)
+            self.ce(positions)          # (batch, steps, partition, d/2)
+        ], dim=-1)
 
-        return re_matrix, f_re
+        return y

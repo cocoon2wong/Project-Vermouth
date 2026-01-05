@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 20:36:04
+@LastEditTime: 2026-01-05 19:16:06
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -19,6 +19,7 @@ from qpid.training.loss import l2
 from .__args import EncoreArgs
 from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor, LinearEgoPredictor
+from .globalEmbedding import GlobalEmbedding
 from .intentionPredictor import IntentionPredictor
 from .socialPredictor import SocialPredictor
 from .utils import repeat
@@ -41,22 +42,39 @@ class EncoreModel(Model):
         self.enc_args = self.args.register_subargs(EncoreArgs, 'enc')
         self.e = self.enc_args  # alias
 
-        # Set model inputs and labels
-        self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
-                        INPUT_TYPES.NEIGHBOR_TRAJ)
+        # Set model inputs
+        # Types of agents are only used in complex scenes
+        # For other datasets, keep it disabled (through the arg)
+        if not self.e.encode_agent_types:
+            self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
+                            INPUT_TYPES.NEIGHBOR_TRAJ)
+        else:
+            self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
+                            INPUT_TYPES.NEIGHBOR_TRAJ,
+                            INPUT_TYPES.AGENT_TYPES)
 
         # Layers
         # Transform layers
-        t_type, it_type = layers.get_transform_layers(self.enc_args.T)
-        self.tlayer = t_type((self.args.obs_frames, self.dim))
-        self.itlayer = it_type((self.args.pred_frames, self.dim))
+        t_type, _ = layers.get_transform_layers(self.enc_args.T)
+        self.tlayer = t_type((self.args.obs_frames + self.e.ego_t_f, self.dim))
+
+        # Embedding (Pre-encoding) layer
+        self.global_embedding = GlobalEmbedding(
+            obs_frames=self.args.obs_frames + self.e.ego_t_f,
+            output_units=self.args.feature_dim//2,
+            transform_layer=self.tlayer,
+            encode_agent_types=self.e.encode_agent_types,
+            enable_bilinear=True,
+        )
 
         # Predictors
+        # Linear predictor
         self.linear_predictor = layers.LinearLayerND(
             obs_frames=self.args.obs_frames,
             pred_frames=self.args.pred_frames,
         )
 
+        # Ego predictor
         if self.e.ego_t_f + self.e.ego_t_h > self.args.obs_frames:
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
                      level='error', raiseError=ValueError)
@@ -77,17 +95,20 @@ class EncoreModel(Model):
             transform=self.enc_args.T,
         )
 
-        self.intention_predictor = IntentionPredictor(
-            obs_steps=self.args.obs_frames,
-            pred_steps=self.args.pred_frames,
-            ego_pred_steps=self.e.ego_t_f,
-            generations=self.e.Kg,
-            traj_dim=self.dim,
-            feature_dim=self.args.feature_dim,
-            noise_depth=self.args.noise_depth,
-            transform=self.enc_args.T,
-        )
+        # Intention predictor
+        if self.e.use_intention_predictor:
+            self.intention_predictor = IntentionPredictor(
+                obs_steps=self.args.obs_frames,
+                pred_steps=self.args.pred_frames,
+                ego_pred_steps=self.e.ego_t_f,
+                generations=self.e.Kg,
+                traj_dim=self.dim,
+                feature_dim=self.args.feature_dim,
+                noise_depth=self.args.noise_depth,
+                transform=self.enc_args.T,
+            )
 
+        # Social predictor
         self.social_predictor = SocialPredictor(
             obs_steps=self.args.obs_frames,
             pred_steps=self.args.pred_frames,
@@ -110,6 +131,13 @@ class EncoreModel(Model):
         # Unpacked `x_nei` are relative values, move them back
         x_nei = x_nei + x_ego[..., None, -1:, :]
 
+        # Get types of all ego agents (if needed)
+        if self.e.encode_agent_types:
+            ego_types = self.get_input(inputs, INPUT_TYPES.AGENT_TYPES)
+        else:
+            ego_types = None
+
+        # Other settings
         repeats = self.args.K_train if training else self.args.K
 
         # -------------------------
@@ -143,25 +171,44 @@ class EncoreModel(Model):
             training=training,
         )  # -> (batch, nei+1, insights, ego_t_f, dim)
 
-        # Unpack ego predictor's predictions
-        x_ego_s = x_s[..., 0, :, :, :]
-        x_nei_s = x_s[..., 1:, :, :, :]
-
+        # Unpack ego predictor's predictions and
         # Concat observations and short-term predictions
-        x_ego_multi = repeat(x_ego[..., None, :, :], self.e.insights, -3)
-        x_nei_multi = repeat(x_nei[..., None, :, :], self.e.insights, -3)
+        x_ego_extended = torch.concat([
+            repeat(x_ego[..., None, :, :], self.e.insights, -3),
+            x_s[..., 0, :, :, :]
+        ], dim=-2)
 
-        x_ego_extended = torch.concat([x_ego_multi, x_ego_s], dim=-2)
-        x_nei_extended = torch.concat([x_nei_multi, x_nei_s], dim=-2)
+        x_nei_extended = torch.concat([
+            repeat(x_nei[..., None, :, :], self.e.insights, -3),
+            x_s[..., 1:, :, :, :],
+        ], dim=-2)
+
+        # ------------------------
+        # MARK: - Global Embedding
+        # ------------------------
+        (f_ego, d_ego), (f_nei, _) = self.global_embedding(
+            x_ego=x_ego_extended,
+            x_nei=x_nei_extended,
+            ego_types=ego_types,
+        )
+
+        # Ego's mean difference trajectory (compared to the linear fit) will
+        # serve as target values for computing Transformer attention in
+        # Transformer decoders (in intention and social predictors).
+        D_ego = self.tlayer(torch.mean(d_ego, dim=-3))
 
         # ---------------------------
         # MARK: - Intention predictor
         # ---------------------------
-        y_intention = self.intention_predictor(
-            x_ego=x_ego_extended,
-            repeats=repeats,
-            training=training,
-        )
+        if self.e.use_intention_predictor:
+            y_intention = self.intention_predictor(
+                f_ego=f_ego,
+                targets=D_ego,
+                repeats=repeats,
+                training=training,
+            )
+        else:
+            y_intention = 0
 
         # ------------------------
         # MARK: - Social predictor
@@ -169,6 +216,9 @@ class EncoreModel(Model):
         y_social = self.social_predictor(
             x_ego=x_ego_extended,
             x_nei=x_nei_extended,
+            f_ego=f_ego,
+            f_nei=f_nei,
+            targets=D_ego,
             repeats=repeats,
             picker=self.picker,
             training=training,

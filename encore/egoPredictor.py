@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-04 15:51:29
+@LastEditTime: 2026-01-05 19:10:49
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -12,7 +12,7 @@ import torch
 from qpid.model import layers, transformer
 from qpid.utils import get_mask
 
-from .linearDiffEncoding import LinearDiffEncoding
+from .globalEmbedding import GlobalEmbedding
 from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
@@ -58,12 +58,19 @@ class EgoPredictor(torch.nn.Module):
         # Only a simple Transformer encoder, with sampled noise vector
         # It does not consider further interactions among neighbors
 
-        # Linear difference encoding (embedding)
-        self.linear_diff = LinearDiffEncoding(
+        # Linear prediction
+        self.linear_predictor = layers.LinearLayerND(
             obs_frames=self.t_h,
             pred_frames=self.t_f,
+        )
+
+        # Linear difference encoding (embedding)
+        self.linear_diff = GlobalEmbedding(
+            obs_frames=self.t_h,
             output_units=self.d//2,
             transform_layer=self.tlayer,
+            encode_agent_types=False,
+            enable_bilinear=False,
         )
 
         # Transformer backbone
@@ -72,9 +79,11 @@ class EgoPredictor(torch.nn.Module):
         self.T_f, self.M_f = self.itlayer.Tshape
 
         # Noise embedding
-        self.noise_embedding = layers.TrajEncoding(self.d_noise,
-                                                   self.d//2,
-                                                   torch.nn.Tanh)
+        self.noise_embedding = layers.TrajEncoding(
+            input_units=self.d_noise,
+            output_units=self.d//2,
+            activation=torch.nn.Tanh
+        )
 
         # Transformer as the feature extractor
         self.T = transformer.Transformer(
@@ -125,16 +134,6 @@ class EgoPredictor(torch.nn.Module):
         # --------------------
         # MARK: - Preprocesses
         # --------------------
-        # Repeat and concat ego and neighbors' obs
-        max_nei_count = x_nei.shape[-3]
-        _x_ego = x_ego[..., None, :, :].expand(
-            *x_ego.shape[:-2],
-            max_nei_count,
-            *x_ego.shape[-2:],
-        )
-
-        _x = torch.concat([_x_ego, x_nei], dim=-2)
-
         # Speed up inference #1: Remove all-empty neighbors
         # Compute max neighbor count within the batch
         valid_mask = get_mask(torch.sum(torch.abs(x_nei), dim=[-1, -2]))
@@ -144,27 +143,35 @@ class EgoPredictor(torch.nn.Module):
             # Compute relative distance (at the last obs step)
             d = torch.norm(x_ego[..., -1:, :] - x_nei[..., -1, :],
                            p=2, dim=-1)
-            idx = torch.topk(d, self.capacity, dim=-1, largest=False).indices
 
             # Compute the min-distance neighbor mask
             cap_mask = torch.zeros_like(d)
-            cap_mask = torch.scatter(cap_mask, -1, idx, 1)
+            cap_mask = torch.scatter(
+                input=cap_mask,
+                dim=-1,
+                index=torch.topk(d, self.capacity, -1, largest=False).indices,
+                value=1,
+            )
         else:
             cap_mask = 1
 
-        # Compute final mask
-        final_mask = valid_mask * cap_mask
+        # Repeat and concat ego and neighbors' obs
+        x_ego = x_ego[..., None, :, :].expand(
+            *x_ego.shape[:-2],
+            x_nei.shape[-3],
+            *x_ego.shape[-2:],
+        )
 
-        # Get neighbors to be considered
-        indices = torch.nonzero(final_mask, as_tuple=True)
-        x_picked = _x[indices]
-
-        _x_ego = x_picked[..., :self.t_h, :]
-        _x_nei = x_picked[..., self.t_h:, :]
+        # Compute final mask && Get neighbors to be considered
+        indices = torch.nonzero(valid_mask * cap_mask, as_tuple=True)
+        x_picked = torch.concat([x_ego, x_nei], dim=-2)[indices]
 
         # Concat ego and neighbors' trajectories into a `big batch`
-        b = _x_ego.shape[0]
-        x_packed = torch.concat([_x_ego, _x_nei], dim=0)
+        b = x_picked.shape[0]
+        x_packed = torch.concat([
+            x_picked[..., :self.t_h, :],    # x_ego
+            x_picked[..., self.t_h:, :],    # x_nei
+        ], dim=0)
 
         # Move the last obs point to (0, 0)
         ref = x_packed[..., -1:, :]         # (b*2, t_h, dim)
@@ -173,12 +180,12 @@ class EgoPredictor(torch.nn.Module):
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
-        # Linear prediction (least squares) && Encode difference features
-        # Apply to both egos' and neighbors' observed trajectories
-        f_diff, x_linear, y_linear = self.linear_diff(x_packed)
+        # Linear prediction (least squares)
+        y_nei_linear = self.linear_pred(x_packed)[b:, None, :, :]
 
-        x_diff = x_packed - x_linear
-        y_nei_linear = y_linear[b:, None, :, :]
+        # Encode difference features
+        # Apply to both egos' and neighbors' observed trajectories
+        f_diff, x_diff = self.linear_diff(x_packed)
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -188,43 +195,32 @@ class EgoPredictor(torch.nn.Module):
         # ----------------------------
         # MARK: - Transformer Backbone
         # ----------------------------
-        # Difference features as keys and queries in attention layers
-        f = f_diff
-
-        # Target value for queries
-        # -> (b*2, T_h, M)
-        X_diff = self.tlayer(x_diff)
 
         all_predictions = []
         repeats = 1
         for _ in range(repeats):
             # Assign random ids and embedding -> (b*2, T_h, d/2)
             z = torch.normal(mean=0, std=1,
-                             size=list(f.shape[:-1]) + [self.d_noise])
-            f_z = self.noise_embedding(z.to(f.device))
-
-            # -> (b*2, T_h, d)
-            f_final = torch.concat([f, f_z], dim=-1)
+                             size=list(f_diff.shape[:-1]) + [self.d_noise])
+            f_z = self.noise_embedding(z.to(f_diff.device))
 
             # Transformer backbone -> (b*2, T_h, d)
-            f_tran, _ = self.T(inputs=f_final,
-                               targets=X_diff,
-                               training=training)
+            # Difference features as keys and queries in attention layers
+            y, _ = self.T(inputs=torch.concat([f_diff, f_z], dim=-1),
+                          targets=self.tlayer(x_diff),
+                          training=training)
 
             # -------------------------------------
             # MARK: - Latency Prediction and Decode
             # -------------------------------------
-            # Unpack features
-            f_ego = f_tran[:b, :, :]
-            f_nei = f_tran[b:, :, :]
 
             # Reverberation kernels and transform
-            I = self.k1(f_ego)
-            R = self.k2(f_nei)
-            f_rev = self.rev(f_nei, R, I)   # (b, ins, T_f, d)
+            I = self.k1(y[:b, :, :])                # Using ego's feature
+            R = self.k2(y[b:, :, :])                # Using neighbor's
+            y = self.rev(y[b:, :, :], R, I)     # (b, ins, T_f, d)
 
             # Decode predictions
-            y = self.decoder(f_rev)         # (b, ins, T_f, M)
+            y = self.decoder(y)         # (b, ins, T_f, M)
             y = self.itlayer(y)             # (b, ins, t_f, m)
 
             all_predictions.append(y)
@@ -239,15 +235,15 @@ class EgoPredictor(torch.nn.Module):
         y_nei = y_nei + ref[b:, None, :, :]
 
         # Run linear prediction for un-masked neighbors
-        y_nei_base = self.linear_pred(x_nei)
-        y_nei_base = y_nei_base[..., None, :, :].expand(
-            *y_nei_base.shape[:-2],
+        y = self.linear_pred(x_nei)
+        y = y[..., None, :, :].expand(
+            *y.shape[:-2],
             self.insights,
-            *y_nei_base.shape[-2:],
+            *y.shape[-2:],
         )
 
         # Replace masked neighbors' predictions
-        y = y_nei_base.clone()
+        y = y.clone()
         y[indices] = y_nei
 
         return y
