@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2026-01-05 14:35:27
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 17:55:22
+@LastEditTime: 2026-01-06 11:31:56
 @Github: https://cocoon2wong.github.io
 @Copyright 2026 Conghao Wong, All Rights Reserved.
 """
@@ -10,15 +10,21 @@
 import torch
 
 from qpid.model import layers
-from qpid.model.layers.transfroms import _BaseTransformLayer
-from qpid.utils import MAX_TYPE_NAME_LEN, get_mask
+from qpid.utils import MAX_TYPE_NAME_LEN
 
 
-class GlobalEmbedding(torch.nn.Module):
+class LinearDiffEncoding(torch.nn.Module):
+    """
+    Linear Difference Encoding Layer
+    ---
+    It is used to encode the difference between the observed trajectory and
+    the corresponding linear (least square) trajectory of the ego agent.
+    """
 
     def __init__(self, obs_frames: int,
+                 traj_dim: int,
                  output_units: int,
-                 transform_layer: _BaseTransformLayer,
+                 transform_type: str,
                  encode_agent_types: bool | int = False,
                  enable_bilinear: bool = False,
                  *args, **kwargs):
@@ -26,12 +32,14 @@ class GlobalEmbedding(torch.nn.Module):
         super().__init__()
 
         self.d = output_units
-        self.T_layer = transform_layer
-
         self.obs_frames = obs_frames
 
         self.encode_types = encode_agent_types
         self.bilinear = enable_bilinear
+
+        # Transform layers
+        t_type, _ = layers.get_transform_layers(transform_type)
+        self.tlayer = t_type((obs_frames, traj_dim))
 
         # Linear prediction layer
         self.linear = layers.LinearLayerND(
@@ -42,18 +50,18 @@ class GlobalEmbedding(torch.nn.Module):
 
         # Trajectory encoding (normal)
         self.te = layers.TrajEncoding(
-            input_units=self.T_layer.Oshape[-1],
+            input_units=self.tlayer.Oshape[-1],
             output_units=self.d//2 if self.bilinear else self.d,
             activation=torch.nn.ReLU if self.bilinear else torch.nn.Tanh,
-            transform_layer=self.T_layer
+            transform_layer=self.tlayer,
         )
 
         # Trajectory encoding (linear)
         self.le = layers.TrajEncoding(
-            input_units=self.T_layer.Oshape[-1],
+            input_units=self.tlayer.Oshape[-1],
             output_units=self.d//2 if self.bilinear else self.d,
             activation=torch.nn.ReLU if self.bilinear else torch.nn.Tanh,
-            transform_layer=self.T_layer
+            transform_layer=self.tlayer,
         )
 
         # Bilinear structure (outer product + pooling + fc)
@@ -88,44 +96,42 @@ class GlobalEmbedding(torch.nn.Module):
         # --------------------
         # MARK: - Preprocesses
         # --------------------
+
         # Concat ego and nei trajectories (if needed)
         x = x_ego[..., None, :, :, :]      # (batch, 1, K, obs, dim)
 
         if x_nei is not None:
-            # -> (batch, N:=1+nei, K, obs, dim)
-            x = torch.concat([x, x_nei], dim=-4)
-
-        # Speed up computation: Remove all invalid trajs
-        valid_mask = get_mask(torch.sum(torch.abs(x), dim=[-1, -2]))
-        valid_idx = torch.nonzero(valid_mask, as_tuple=True)
-
-        # Gather all valid trajectories into a big batch
-        x_valid = x[valid_idx]
-        x_valid = x_valid - x_valid[..., -1:, :]     # (bb, obs, dim)
+            x = x_ego.unsqueeze(-4)              # (batch, 1, K, obs, dim)
+            x = torch.concat([x, x_nei], dim=-4)  # (batch, 1+nei, K, obs, dim)
+        else:
+            x = x_ego
 
         # -------------------------
         # MARK: - Linear Prediction
         # -------------------------
+        # Move the last obs point to `(0, 0)`
+        x = x - x[..., -1:, :]
+
         # Compute linear trajectories (linear fit among observations)
-        x_linear_valid = self.linear(x_valid)[..., :-1, :]  # (bb, obs, dim)
-        x_linear_valid = x_linear_valid - x_linear_valid[..., -1:, :]
-        x_diff_valid = x_valid - x_linear_valid             # (bb, obs, dim)
+        x_linear = self.linear(x)[..., :-1, :]      # (..., obs, dim)
+        x_linear = x_linear - x_linear[..., -1:, :]
+        x_diff = x - x_linear                       # (..., obs, dim)
 
         # ---------------------
         # MARK: - Dual Encoding
         # ---------------------
-        fn = self.te(x_valid)           # (bb, obs, dim)
-        fl = self.le(x_linear_valid)    # (bb, obs, dim)
+        fn = self.te(x)                 # (..., obs, dim)
+        fl = self.le(x_linear)          # (..., obs, dim)
 
         # Bilinear refinement
         if self.bilinear:
-            fn = self.outer(fn, fn)     # (bb, obs, d/2, d/2)
-            fn = self.flatten(fn)       # (bb, obs, (d/2)^2)
-            fn = self.outer_fc(fn)      # (bb, obs, d)
+            fn = self.outer(fn, fn)     # (..., obs, d/2, d/2)
+            fn = self.flatten(fn)       # (..., obs, (d/2)^2)
+            fn = self.outer_fc(fn)      # (..., obs, d)
 
             fl = self.outer(fl, fl)
             fl = self.flatten(fl)
-            fl = self.outer_fc_linear(fl)   # (bb, obs, d)
+            fl = self.outer_fc_linear(fl)   # (..., obs, d)
 
         # Compute difference feature
         fn = fn - fl                    # ranged from (-2, 2)
@@ -134,22 +140,17 @@ class GlobalEmbedding(torch.nn.Module):
         # --------------------
         # MARK: - Post Process
         # --------------------
-        # Put invalid neighbors back (trajectories)
-        x_diff = torch.zeros_like(x)
-        x_diff[valid_idx] = x_diff_valid
-
-        # Put invalid neighbors back (features)
-        f = torch.zeros([*x.shape[:-2], *fn.shape[-2:]])
-        f = f.to(x.device).to(torch.float32)
-        f[valid_idx] = fn       # (batch, N:=1+nei, K, obs, d)
-
         # Unpack trajectories and features
-        x_diff_ego = x_diff[..., 0, :, :, :]    # (batch, K, obs, dim)
-        f_ego = f[..., 0, :, :, :]              # (batch, K, obs, d)
-
         if x_nei is not None:
+            x_diff_ego = x_diff[..., 0, :, :, :]    # (batch, K, obs, dim)
             x_diff_nei = x_diff[..., 1:, :, :, :]   # (batch, nei, K, obs, dim)
-            f_nei = f[..., 1:, :, :, :]             # (batch, nei, K, obs, d)
+
+            f_ego = fn[..., 0, :, :, :]              # (batch, K, obs, d)
+            f_nei = fn[..., 1:, :, :, :]             # (batch, nei, K, obs, d)
+
+        else:
+            x_diff_ego = x_diff
+            f_ego = fn
 
         # Encode types (if needed)
         if self.encode_types and (ego_types is not None):

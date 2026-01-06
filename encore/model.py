@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 19:16:06
+@LastEditTime: 2026-01-06 11:20:59
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -19,7 +19,6 @@ from qpid.training.loss import l2
 from .__args import EncoreArgs
 from .egoLoss import EgoLoss
 from .egoPredictor import EgoPredictor, LinearEgoPredictor
-from .globalEmbedding import GlobalEmbedding
 from .intentionPredictor import IntentionPredictor
 from .socialPredictor import SocialPredictor
 from .utils import repeat
@@ -52,20 +51,6 @@ class EncoreModel(Model):
             self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
                             INPUT_TYPES.NEIGHBOR_TRAJ,
                             INPUT_TYPES.AGENT_TYPES)
-
-        # Layers
-        # Transform layers
-        t_type, _ = layers.get_transform_layers(self.enc_args.T)
-        self.tlayer = t_type((self.args.obs_frames + self.e.ego_t_f, self.dim))
-
-        # Embedding (Pre-encoding) layer
-        self.global_embedding = GlobalEmbedding(
-            obs_frames=self.args.obs_frames + self.e.ego_t_f,
-            output_units=self.args.feature_dim//2,
-            transform_layer=self.tlayer,
-            encode_agent_types=self.e.encode_agent_types,
-            enable_bilinear=True,
-        )
 
         # Predictors
         # Linear predictor
@@ -109,17 +94,18 @@ class EncoreModel(Model):
             )
 
         # Social predictor
-        self.social_predictor = SocialPredictor(
-            obs_steps=self.args.obs_frames,
-            pred_steps=self.args.pred_frames,
-            ego_pred_steps=self.e.ego_t_f,
-            partitions=self.e.partitions,
-            generations=self.e.Kg,
-            traj_dim=self.dim,
-            feature_dim=self.args.feature_dim,
-            noise_depth=self.args.noise_depth,
-            transform=self.enc_args.T,
-        )
+        if self.e.use_social_predictor:
+            self.social_predictor = SocialPredictor(
+                obs_steps=self.args.obs_frames,
+                pred_steps=self.args.pred_frames,
+                ego_pred_steps=self.e.ego_t_f,
+                partitions=self.e.partitions,
+                generations=self.e.Kg,
+                traj_dim=self.dim,
+                feature_dim=self.args.feature_dim,
+                noise_depth=self.args.noise_depth,
+                transform=self.enc_args.T,
+            )
 
     def forward(self, inputs, training=None, mask=None, *args, **kwargs):
         # --------------------
@@ -183,28 +169,14 @@ class EncoreModel(Model):
             x_s[..., 1:, :, :, :],
         ], dim=-2)
 
-        # ------------------------
-        # MARK: - Global Embedding
-        # ------------------------
-        (f_ego, d_ego), (f_nei, _) = self.global_embedding(
-            x_ego=x_ego_extended,
-            x_nei=x_nei_extended,
-            ego_types=ego_types,
-        )
-
-        # Ego's mean difference trajectory (compared to the linear fit) will
-        # serve as target values for computing Transformer attention in
-        # Transformer decoders (in intention and social predictors).
-        D_ego = self.tlayer(torch.mean(d_ego, dim=-3))
-
         # ---------------------------
         # MARK: - Intention predictor
         # ---------------------------
         if self.e.use_intention_predictor:
             y_intention = self.intention_predictor(
-                f_ego=f_ego,
-                targets=D_ego,
+                x_ego=x_ego_extended,
                 repeats=repeats,
+                ego_types=ego_types,
                 training=training,
             )
         else:
@@ -213,16 +185,17 @@ class EncoreModel(Model):
         # ------------------------
         # MARK: - Social predictor
         # ------------------------
-        y_social = self.social_predictor(
-            x_ego=x_ego_extended,
-            x_nei=x_nei_extended,
-            f_ego=f_ego,
-            f_nei=f_nei,
-            targets=D_ego,
-            repeats=repeats,
-            picker=self.picker,
-            training=training,
-        )
+        if self.e.use_social_predictor:
+            y_social = self.social_predictor(
+                x_ego=x_ego_extended,
+                x_nei=x_nei_extended,
+                repeats=repeats,
+                picker=self.picker,
+                ego_types=ego_types,
+                training=training,
+            )
+        else:
+            y_social = 0
 
         # Final predictions
         y = y_linear + y_intention + y_social

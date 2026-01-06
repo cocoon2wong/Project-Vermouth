@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 19:10:49
+@LastEditTime: 2026-01-05 21:27:47
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -12,7 +12,7 @@ import torch
 from qpid.model import layers, transformer
 from qpid.utils import get_mask
 
-from .globalEmbedding import GlobalEmbedding
+from .linearDiffEncoding import LinearDiffEncoding
 from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
@@ -65,10 +65,11 @@ class EgoPredictor(torch.nn.Module):
         )
 
         # Linear difference encoding (embedding)
-        self.linear_diff = GlobalEmbedding(
+        self.linear_diff = LinearDiffEncoding(
             obs_frames=self.t_h,
+            traj_dim=self.d_traj,
             output_units=self.d//2,
-            transform_layer=self.tlayer,
+            transform_type=transform,
             encode_agent_types=False,
             enable_bilinear=False,
         )

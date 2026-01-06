@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 18:50:32
+@LastEditTime: 2026-01-06 11:19:45
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -11,6 +11,7 @@ import torch
 
 from qpid.model import layers, transformer
 
+from .linearDiffEncoding import LinearDiffEncoding
 from .reverberationTransform import KernelLayer, ReverberationTransform
 
 
@@ -31,6 +32,7 @@ class IntentionPredictor(torch.nn.Module):
                  feature_dim: int,
                  noise_depth: int,
                  transform: str,
+                 encode_agent_types: int | bool = False,
                  *args, **kwargs):
 
         super().__init__()
@@ -50,6 +52,15 @@ class IntentionPredictor(torch.nn.Module):
         t_type, it_type = layers.get_transform_layers(transform)
         self.tlayer = t_type((self.t_h + self.ego_t_f, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
+
+        # Linear difference encoding (embedding)
+        self.linear_diff = LinearDiffEncoding(
+            obs_frames=self.t_h + self.ego_t_f,
+            traj_dim=self.d_traj,
+            output_units=self.d//2,
+            transform_type=transform,
+            encode_agent_types=encode_agent_types,
+        )
 
         # Transformer backbone
         # Shapes
@@ -86,12 +97,20 @@ class IntentionPredictor(torch.nn.Module):
         # Final output layer
         self.decoder = layers.Dense(self.d, self.M_f)
 
-    def forward(self, f_ego: torch.Tensor,
-                targets: torch.Tensor,
+    def forward(self, x_ego: torch.Tensor,
                 repeats: int,
+                ego_types: torch.Tensor | None = None,
                 training=None,
-                mask=None,
                 *args, **kwargs):
+
+        # ------------------------
+        # MARK: - Embed and Encode
+        # ------------------------
+        # Linear prediction (least squares) && Encode difference features
+        f_ego, d_ego = self.linear_diff(
+            x_ego=x_ego,
+            ego_types=ego_types,
+        )
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -103,6 +122,10 @@ class IntentionPredictor(torch.nn.Module):
         # ----------------------------
         # "Max pool" features on all insights
         f_ego = torch.max(f_ego, dim=-3)[0]
+
+        # Target value for queries
+        # -> (batch, partitions, M)
+        targets = targets = self.tlayer(torch.mean(d_ego, dim=-3))
 
         all_predictions = []
         for _ in range(repeats):

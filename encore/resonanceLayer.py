@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-23 10:22:15
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 19:01:45
+@LastEditTime: 2026-01-06 09:13:25
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -27,30 +27,16 @@ class ResonanceLayer(torch.nn.Module):
     def __init__(self, hidden_feature_dim: int,
                  output_feature_dim: int,
                  angle_partitions: int,
-                 transform_layer: layers.transfroms._BaseTransformLayer,
                  *args, **kwargs) -> None:
 
         super().__init__()
 
         # Variables and Settings
+        self.p = angle_partitions
         self.d = output_feature_dim
         self.d_h = hidden_feature_dim
 
-        self.p = angle_partitions
-
         # Layers
-        # Transform layers
-        self.Tlayer = transform_layer
-
-        # Shapes
-        self.steps, self.channels = self.Tlayer.Oshape
-        self.Tsteps, self.Tchannels = self.Tlayer.Tshape
-
-        # Trajectory encoding (pure trajectories)
-        self.te = layers.TrajEncoding(self.channels, hidden_feature_dim,
-                                      activation=torch.nn.ReLU,
-                                      transform_layer=self.Tlayer)
-
         # Position encoding (not positional encoding)
         self.ce = layers.TrajEncoding(2, self.d//2, torch.nn.ReLU)
 
@@ -72,7 +58,7 @@ class ResonanceLayer(torch.nn.Module):
 
         # Compute positional information in a SocialCircle-like way
         # Time-resolution of the used transform
-        t_r = int(np.ceil(self.steps / self.Tsteps))
+        t_r = int(np.ceil(x_ego_2d.shape[-2] / f_ego.shape[-2]))
 
         p_nei = x_nei_2d - x_ego_2d[..., None, :, :]
         p_nei = p_nei[..., ::t_r, :]

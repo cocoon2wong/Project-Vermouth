@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 18:53:04
+@LastEditTime: 2026-01-06 11:23:05
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -12,6 +12,7 @@ import torch
 from qpid.dataset import Annotation
 from qpid.model import layers, transformer
 
+from .linearDiffEncoding import LinearDiffEncoding
 from .resonanceLayer import ResonanceLayer
 from .reverberationTransform import KernelLayer, ReverberationTransform
 from .utils import repeat
@@ -35,6 +36,7 @@ class SocialPredictor(torch.nn.Module):
                  feature_dim: int,
                  noise_depth: int,
                  transform: str,
+                 encode_agent_types: int | bool = False,
                  *args, **kwargs):
 
         super().__init__()
@@ -56,13 +58,22 @@ class SocialPredictor(torch.nn.Module):
         self.tlayer = t_type((self.t_h + self.ego_t_f, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
 
+        # Linear difference encoding (embedding)
+        # For observations
+        self.linear_diff = LinearDiffEncoding(
+            obs_frames=self.t_h + self.ego_t_f,
+            traj_dim=self.d_traj,
+            output_units=self.d//2,
+            transform_type=transform,
+            encode_agent_types=encode_agent_types,
+        )
+
         # Resonance layer (for computing social interactions)
         # For observations
         self.resonance = ResonanceLayer(
             hidden_feature_dim=self.d,
             output_feature_dim=self.d//2,
             angle_partitions=self.p,
-            transform_layer=self.tlayer,
         )
 
         # Concat layer for `f_ego` and `f_social`
@@ -107,11 +118,9 @@ class SocialPredictor(torch.nn.Module):
 
     def forward(self, x_ego: torch.Tensor,
                 x_nei: torch.Tensor,
-                f_ego: torch.Tensor,
-                f_nei: torch.Tensor,
-                targets: torch.Tensor,
                 repeats: int,
                 picker: Annotation,
+                ego_types: torch.Tensor | None = None,
                 training=None,
                 mask=None,
                 *args, **kwargs):
@@ -119,6 +128,17 @@ class SocialPredictor(torch.nn.Module):
         NOTE: Both `ego_traj` and `nei_trajs` should be absolute values, 
         and share the same sequence length!
         """
+
+        # ------------------------
+        # MARK: - Embed and Encode
+        # ------------------------
+        # Linear prediction (least squares) && Encode difference features
+        # Apply to both egos' and neighbors' observed trajectories
+        (f_ego, d_ego), (f_nei, _) = self.linear_diff(
+            x_ego=x_ego,
+            x_nei=x_nei,
+            ego_types=ego_types,
+        )
 
         # ---------------------------
         # MARK: - Social Interactions
@@ -157,6 +177,7 @@ class SocialPredictor(torch.nn.Module):
 
         # Target value for queries
         # -> (batch, T_h * partitions, M)
+        targets = self.tlayer(torch.mean(d_ego, dim=-3))
         targets = repeat(targets, self.p, -2)
 
         # Make random predictions

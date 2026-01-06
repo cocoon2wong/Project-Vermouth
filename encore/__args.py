@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 19:05:25
+@LastEditTime: 2026-01-05 19:53:24
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -140,6 +140,17 @@ class EncoreArgs(EmptyArgs):
                          desc_in_model_summary=('Ablation Settings',
                                                 'Use intention predictor'))
 
+    @property
+    def use_social_predictor(self) -> int:
+        """
+        **Ablation Settings:**
+        (bool) Choose whether to use the social prediction as one of the model
+        predictions.
+        """
+        return self._arg('use_social_predictor', 1, STATIC,
+                         desc_in_model_summary=('Ablation Settings',
+                                                'Use social predictor'))
+
     # ----------------
     # MARK: - Vis Args
     # ----------------
@@ -171,6 +182,11 @@ class EncoreArgs(EmptyArgs):
             self.log('Please specify input or output lengths of the ego ' +
                      'predictor! Currently received: ' +
                      f'(t_h, t_f) = ({self.ego_t_h}, {self.ego_t_f}).',
+                     level='error', raiseError=ValueError)
+
+        if self.use_social_predictor + self.use_intention_predictor == 0:
+            self.log('`use_social_predictor` and `use_intention_predictor` ' +
+                     'can not be disabled simultaneously!',
                      level='error', raiseError=ValueError)
 
         if self.partitions <= 0:
