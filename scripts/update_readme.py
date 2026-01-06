@@ -44,6 +44,7 @@ About the `argtype`:
 
 
 if __name__ == '__main__':
+    import encore
     qpid.register_args(PlaygroundArgs, 'Playground Args')
     qpid.register_args(VisArgs, 'Visualization Args')
     qpid.help.update_readme([SECTION_HEAD] + 
