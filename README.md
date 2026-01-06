@@ -2,6 +2,63 @@
 
 This is the official developing repo of our paper *Conditioning Trajectory Prediction via Biased Ego Rehearsals*.
 
+## Getting Started
+
+You can clone [this repository](https://github.com/cocoon2wong/Enc) by the following command:
+
+```bash
+git clone https://github.com/cocoon2wong/Enc.git
+```
+
+Then, run the following command to initialize all submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+## Requirements
+
+The code is developed with Python 3.13.  
+Additional packages used are included in the `requirements.txt` file.
+
+> [!WARNING]  
+> We recommend installing all required Python packages in a virtual environment (like the `conda` environment).  
+> Otherwise, there *COULD* be other problems due to the package version conflicts.
+
+Run the following command to install the required packages in your Python environment:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Installing qpid (CLI support)
+
+This project provides a command-line interface (CLI) for running training and evaluation.
+
+To enable the CLI, install the project:
+
+```bash
+pip install -e ./qpid
+```
+
+> [!NOTE]
+> `-e` means *editable*:  
+> any changes you make to the source code will take effect immediately, without reinstalling.
+
+After installation, you can verify:
+
+```bash
+qpid --help
+```
+
+You can then run experiments simply with:
+
+```bash
+qpid --model enc --split zara1 ...
+```
+
+(Using `python -m qpid ...` remains fully supported and behaves the same.)
+
 <!-- DO NOT CHANGE THIS LINE -->
 ---
 
