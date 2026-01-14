@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-06 11:20:59
+@LastEditTime: 2026-01-13 16:27:13
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -53,12 +53,6 @@ class EncoreModel(Model):
                             INPUT_TYPES.AGENT_TYPES)
 
         # Predictors
-        # Linear predictor
-        self.linear_predictor = layers.LinearLayerND(
-            obs_frames=self.args.obs_frames,
-            pred_frames=self.args.pred_frames,
-        )
-
         # Ego predictor
         if self.e.ego_t_f + self.e.ego_t_h > self.args.obs_frames:
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
@@ -80,12 +74,18 @@ class EncoreModel(Model):
             transform=self.enc_args.T,
         )
 
+        # Linear predictor
+        self.linear_predictor = layers.LinearLayerND(
+            obs_frames=self.args.obs_frames + self.e.ego_t_f,
+            pred_frames=self.args.pred_frames - self.e.ego_t_f,
+            return_full_trajectory=True,
+        )
+
         # Intention predictor
         if self.e.use_intention_predictor:
             self.intention_predictor = IntentionPredictor(
-                obs_steps=self.args.obs_frames,
+                obs_steps=self.args.obs_frames + self.e.ego_t_f,
                 pred_steps=self.args.pred_frames,
-                ego_pred_steps=self.e.ego_t_f,
                 generations=self.e.Kg,
                 traj_dim=self.dim,
                 feature_dim=self.args.feature_dim,
@@ -96,9 +96,8 @@ class EncoreModel(Model):
         # Social predictor
         if self.e.use_social_predictor:
             self.social_predictor = SocialPredictor(
-                obs_steps=self.args.obs_frames,
+                obs_steps=self.args.obs_frames + self.e.ego_t_f,
                 pred_steps=self.args.pred_frames,
-                ego_pred_steps=self.e.ego_t_f,
                 partitions=self.e.partitions,
                 generations=self.e.Kg,
                 traj_dim=self.dim,
@@ -125,14 +124,6 @@ class EncoreModel(Model):
 
         # Other settings
         repeats = self.args.K_train if training else self.args.K
-
-        # -------------------------
-        # MARK: - Linear prediction
-        # -------------------------
-        if self.e.use_linear:
-            y_linear = self.linear_predictor(x_ego)[..., None, :, :]
-        else:
-            y_linear = 0
 
         # ---------------------
         # MARK: - Ego predictor
@@ -168,6 +159,16 @@ class EncoreModel(Model):
             repeat(x_nei[..., None, :, :], self.e.insights, -3),
             x_s[..., 1:, :, :, :],
         ], dim=-2)
+
+        # -------------------------
+        # MARK: - Linear prediction
+        # -------------------------
+        if self.e.use_linear:
+            y_linear = self.linear_predictor(
+                torch.mean(x_ego_extended, dim=-3)
+            )[..., None, -self.args.pred_frames:, :]
+        else:
+            y_linear = 0
 
         # ---------------------------
         # MARK: - Intention predictor

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-06 11:23:05
+@LastEditTime: 2026-01-13 16:23:54
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -29,7 +29,6 @@ class SocialPredictor(torch.nn.Module):
 
     def __init__(self, obs_steps: int,
                  pred_steps: int,
-                 ego_pred_steps: int,
                  partitions: int,
                  generations: int,
                  traj_dim: int,
@@ -44,7 +43,6 @@ class SocialPredictor(torch.nn.Module):
         # Parameters
         self.t_h = obs_steps
         self.t_f = pred_steps
-        self.ego_t_f = ego_pred_steps
 
         self.d = feature_dim
         self.d_traj = traj_dim
@@ -55,13 +53,13 @@ class SocialPredictor(torch.nn.Module):
         # Layers
         # Transform layers
         t_type, it_type = layers.get_transform_layers(transform)
-        self.tlayer = t_type((self.t_h + self.ego_t_f, self.d_traj))
+        self.tlayer = t_type((self.t_h, self.d_traj))
         self.itlayer = it_type((self.t_f, self.d_traj))
 
         # Linear difference encoding (embedding)
         # For observations
         self.linear_diff = LinearDiffEncoding(
-            obs_frames=self.t_h + self.ego_t_f,
+            obs_frames=self.t_h,
             traj_dim=self.d_traj,
             output_units=self.d//2,
             transform_type=transform,
