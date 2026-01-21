@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-23 10:22:15
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-06 09:13:25
+@LastEditTime: 2026-01-21 09:24:09
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -45,22 +45,26 @@ class ResonanceLayer(torch.nn.Module):
         self.fc2 = layers.Dense(self.d_h, self.d_h, torch.nn.ReLU)
         self.fc3 = layers.Dense(self.d_h, self.d//2, torch.nn.ReLU)
 
-    def forward(self, x_ego_2d: torch.Tensor,
-                x_nei_2d: torch.Tensor,
+    def forward(self, x_ego_mean: torch.Tensor,
+                x_nei_mean: torch.Tensor,
                 f_ego: torch.Tensor,
                 f_nei: torch.Tensor):
 
         # Compute meta resonance features (for each neighbor)
-        f_nei = f_ego[..., None, :, :] * f_nei   # -> (batch, N, obs, d)
+        # -> (batch, N, insights, obs, d)
+        f_nei = f_ego.unsqueeze(-4) * f_nei
+
+        # "Max pool" features on all insights
+        f_nei = torch.max(f_nei, dim=-3)[0]
 
         # Shape of the final output `f_re`: (batch, N, obs, d/2)
         f_nei = self.fc3(self.fc2(self.fc1(f_nei)))
 
         # Compute positional information in a SocialCircle-like way
         # Time-resolution of the used transform
-        t_r = int(np.ceil(x_ego_2d.shape[-2] / f_ego.shape[-2]))
+        t_r = int(np.ceil(x_ego_mean.shape[-2] / f_ego.shape[-2]))
 
-        p_nei = x_nei_2d - x_ego_2d[..., None, :, :]
+        p_nei = x_nei_mean - x_ego_mean[..., None, :, :]
         p_nei = p_nei[..., ::t_r, :]
 
         # Compute distances and angles (for all neighbors)

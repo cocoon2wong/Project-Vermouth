@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 21:27:47
+@LastEditTime: 2026-01-20 12:12:24
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -216,13 +216,13 @@ class EgoPredictor(torch.nn.Module):
             # -------------------------------------
 
             # Reverberation kernels and transform
-            I = self.k1(y[:b, :, :])                # Using ego's feature
-            R = self.k2(y[b:, :, :])                # Using neighbor's
+            I = self.k1(y[:b, :, :])            # Using ego's feature
+            R = self.k2(y[b:, :, :])            # Using neighbor's
             y = self.rev(y[b:, :, :], R, I)     # (b, ins, T_f, d)
 
             # Decode predictions
-            y = self.decoder(y)         # (b, ins, T_f, M)
-            y = self.itlayer(y)             # (b, ins, t_f, m)
+            y = self.decoder(y)                 # (b, ins, T_f, M)
+            y = self.itlayer(y)                 # (b, ins, t_f, m)
 
             all_predictions.append(y)
 
@@ -236,6 +236,7 @@ class EgoPredictor(torch.nn.Module):
         y_nei = y_nei + ref[b:, None, :, :]
 
         # Run linear prediction for un-masked neighbors
+        # This is mainly for speeding up computation
         y = self.linear_pred(x_nei)
         y = y[..., None, :, :].expand(
             *y.shape[:-2],

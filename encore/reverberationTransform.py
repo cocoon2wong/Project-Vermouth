@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-23 11:10:36
 @LastEditors: Conghao Wong
-@LastEditTime: 2025-12-23 16:14:04
+@LastEditTime: 2026-01-21 09:29:44
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -40,8 +40,9 @@ class ReverberationTransform(torch.nn.Module):
     """
     Reverberation Transform Layer
     ---
-    The reverberation transform layer, which applies the proposed reverberation
-    transform on the given sequential representation.
+    The reverberation transform layer, which applies the reverberation transform
+    on the given sequential representation.
+    See "Reverberation: Learning the Latencies Before Forecasting Trajectories".
 
     NOTE: This layer does not contain the trainable reverberation kernels. Please
     train them outside from this class (layer).

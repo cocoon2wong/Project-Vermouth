@@ -143,11 +143,11 @@ class IntentionPredictor(torch.nn.Module):
             # Reverberation kernels and transform
             G = self.k1(y)
             R = self.k2(y)
-            y = self.rev(y, R, G)          # (batch, K_g, T_f, d)
+            y = self.rev(y, R, G)       # (batch, K_g, T_f, d)
 
             # Decode predictions
-            y = self.decoder(y)                 # (batch, K_g, T_f, M)
-            y = self.itlayer(y)                     # (batch, K_g, t_f, m)
+            y = self.decoder(y)         # (batch, K_g, T_f, M)
+            y = self.itlayer(y)         # (batch, K_g, t_f, m)
 
             all_predictions.append(y)
 

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-13 16:27:13
+@LastEditTime: 2026-01-21 09:31:53
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -54,10 +54,13 @@ class EncoreModel(Model):
 
         # Predictors
         # Ego predictor
+
+        # Length check
         if self.e.ego_t_f + self.e.ego_t_h > self.args.obs_frames:
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
                      level='error', raiseError=ValueError)
 
+        # `ego_capacity = 0` is only used in ablations
         if self.e.ego_capacity == 0:
             ego_predictor_type = LinearEgoPredictor
         else:

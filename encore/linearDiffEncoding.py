@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2026-01-05 14:35:27
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-06 11:31:56
+@LastEditTime: 2026-01-21 09:28:33
 @Github: https://cocoon2wong.github.io
 @Copyright 2026 Conghao Wong, All Rights Reserved.
 """
@@ -98,11 +98,11 @@ class LinearDiffEncoding(torch.nn.Module):
         # --------------------
 
         # Concat ego and nei trajectories (if needed)
-        x = x_ego[..., None, :, :, :]      # (batch, 1, K, obs, dim)
+        x = x_ego[..., None, :, :, :]               # (b, 1, K, obs, dim)
 
         if x_nei is not None:
-            x = x_ego.unsqueeze(-4)              # (batch, 1, K, obs, dim)
-            x = torch.concat([x, x_nei], dim=-4)  # (batch, 1+nei, K, obs, dim)
+            x = x_ego.unsqueeze(-4)                 # (b, 1, K, obs, dim)
+            x = torch.concat([x, x_nei], dim=-4)    # (b, 1+nei, K, obs, dim)
         else:
             x = x_ego
 
@@ -120,22 +120,22 @@ class LinearDiffEncoding(torch.nn.Module):
         # ---------------------
         # MARK: - Dual Encoding
         # ---------------------
-        fn = self.te(x)                 # (..., obs, dim)
-        fl = self.le(x_linear)          # (..., obs, dim)
+        fn = self.te(x)                     # (..., obs, dim)
+        fl = self.le(x_linear)              # (..., obs, dim)
 
         # Bilinear refinement
         if self.bilinear:
-            fn = self.outer(fn, fn)     # (..., obs, d/2, d/2)
-            fn = self.flatten(fn)       # (..., obs, (d/2)^2)
-            fn = self.outer_fc(fn)      # (..., obs, d)
+            fn = self.outer(fn, fn)         # (..., obs, d/2, d/2)
+            fn = self.flatten(fn)           # (..., obs, (d/2)^2)
+            fn = self.outer_fc(fn)          # (..., obs, d)
 
             fl = self.outer(fl, fl)
             fl = self.flatten(fl)
             fl = self.outer_fc_linear(fl)   # (..., obs, d)
 
         # Compute difference feature
-        fn = fn - fl                    # ranged from (-2, 2)
-        fn = fn / 2                     # ranged from (-1 ,1)
+        fn = fn - fl                        # ranged from (-2, 2)
+        fn = fn / 2                         # ranged from (-1 ,1)
 
         # --------------------
         # MARK: - Post Process
@@ -145,8 +145,8 @@ class LinearDiffEncoding(torch.nn.Module):
             x_diff_ego = x_diff[..., 0, :, :, :]    # (batch, K, obs, dim)
             x_diff_nei = x_diff[..., 1:, :, :, :]   # (batch, nei, K, obs, dim)
 
-            f_ego = fn[..., 0, :, :, :]              # (batch, K, obs, d)
-            f_nei = fn[..., 1:, :, :, :]             # (batch, nei, K, obs, d)
+            f_ego = fn[..., 0, :, :, :]             # (batch, K, obs, d)
+            f_nei = fn[..., 1:, :, :, :]            # (batch, nei, K, obs, d)
 
         else:
             x_diff_ego = x_diff

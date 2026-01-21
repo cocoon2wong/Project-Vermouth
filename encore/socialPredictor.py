@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-13 16:23:54
+@LastEditTime: 2026-01-21 09:27:57
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -141,24 +141,25 @@ class SocialPredictor(torch.nn.Module):
         # ---------------------------
         # MARK: - Social Interactions
         # ---------------------------
-        # Transpose shapes (batch, nei, Ks, ...) into (batch, Ks, nei, ...)
-        x_nei = torch.transpose(x_nei, -3, -4)
-        f_nei = torch.transpose(f_nei, -3, -4)
+        # Compute angle-based interactions based on their trust positions
+        # Positions used to compute interactions should be 2D mean trajectories
+        x_ego_mean = picker.get_center(x_ego.mean(dim=-3))[..., :2]
+        x_nei_mean = picker.get_center(x_nei.mean(dim=-3))[..., :2]
 
-        # Compute social features on all `big batchs` (batch, Ks, ...)
+        # See "Resonance: Learning to Predict Social-Aware Pedestrian
+        # Trajectories as Co-Vibrations"
         f_social = self.resonance(
-            x_ego_2d=picker.get_center(x_ego)[..., :2],
-            x_nei_2d=picker.get_center(x_nei)[..., :2],
+            x_ego_mean=x_ego_mean,
+            x_nei_mean=x_nei_mean,
             f_ego=f_ego,
             f_nei=f_nei,
-        )
+        )  # -> (batch, T_h, partitions, d/2)
 
         # ----------------------------
         # MARK: - Transformer Backbone
         # ----------------------------
         # "Max pool" features on all insights
         f_ego = torch.max(f_ego, dim=-3)[0]
-        f_social = torch.max(f_social, dim=-4)[0]
 
         # Pad features to keep the compatible tensor shape
         # Original shape of `f_ego` is `(batch, T_h, d/2)`
