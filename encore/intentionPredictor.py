@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-13 16:23:06
+@LastEditTime: 2026-03-16 20:49:13
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -122,8 +122,7 @@ class IntentionPredictor(torch.nn.Module):
         f_ego = torch.max(f_ego, dim=-3)[0]
 
         # Target value for queries
-        # -> (batch, partitions, M)
-        targets = targets = self.tlayer(torch.mean(d_ego, dim=-3))
+        targets = self.tlayer(torch.mean(d_ego, dim=-3))
 
         all_predictions = []
         for _ in range(repeats):

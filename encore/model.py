@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-16 16:09:43
+@LastEditTime: 2026-03-16 20:30:56
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -34,7 +34,9 @@ class EncoreModel(Model):
     def __init__(self, structure=None, *args, **kwargs):
         super().__init__(structure, *args, **kwargs)
 
-        # Init args
+        # -----------------
+        # MARK: - Init args
+        # -----------------
         self.args._set_default('K', 1)
         self.args._set_default('K_train', 1)
         self.args._set('output_pred_steps', 'all')
@@ -52,9 +54,9 @@ class EncoreModel(Model):
                             INPUT_TYPES.NEIGHBOR_TRAJ,
                             INPUT_TYPES.AGENT_TYPES)
 
-        # Predictors
-        # Ego predictor
-
+        # ---------------------
+        # MARK: - Ego predictor
+        # ---------------------
         # Length check
         if self.e.ego_t_f + self.e.ego_t_h > self.args.obs_frames:
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
@@ -78,6 +80,11 @@ class EncoreModel(Model):
             compute_ego_bias=self.e.compute_ego_bias,
         )
 
+        # -----------------------
+        # MARK: - Final predictor
+        # -----------------------
+        # The following networks come from "Reverberation: Learning the
+        # Latencies Before Forecasting Trajectories".
         # Linear predictor
         self.linear_predictor = layers.LinearLayerND(
             obs_frames=self.args.obs_frames + self.e.ego_t_f,
@@ -164,6 +171,9 @@ class EncoreModel(Model):
             x_s[..., 1:, :, :, :],
         ], dim=-2)
 
+        # -----------------------
+        # MARK: - Final predictor
+        # -----------------------
         # -------------------------
         # MARK: - Linear prediction
         # -------------------------
