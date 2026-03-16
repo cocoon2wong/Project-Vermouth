@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-05 19:53:24
+@LastEditTime: 2026-03-16 16:15:10
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -150,6 +150,18 @@ class EncoreArgs(EmptyArgs):
         return self._arg('use_social_predictor', 1, STATIC,
                          desc_in_model_summary=('Ablation Settings',
                                                 'Use social predictor'))
+
+    @property
+    def compute_ego_bias(self) -> int:
+        """
+        **Ablation Settings:**
+        (bool) Choose whether to compute the ego bias, i.e., the cross-agent
+        bilinear product in the ego predictor. It should only be turned off
+        when performing ablation experiments.
+        """
+        return self._arg('compute_ego_bias', 1, STATIC,
+                         desc_in_model_summary=('Ablation Settings',
+                                                'Compute Ego Bias'))
 
     # ----------------
     # MARK: - Vis Args

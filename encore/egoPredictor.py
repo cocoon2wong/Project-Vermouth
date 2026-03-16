@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-20 12:12:24
+@LastEditTime: 2026-03-16 16:01:06
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -34,6 +34,7 @@ class EgoPredictor(torch.nn.Module):
                  feature_dim: int,
                  noise_depth: int,
                  transform: str,
+                 compute_ego_bias: bool | int = True,
                  *args, **kwargs):
 
         super().__init__()
@@ -47,6 +48,8 @@ class EgoPredictor(torch.nn.Module):
         self.d_noise = noise_depth
         self.insights = insights
         self.capacity = capacity
+
+        self.compute_ego_bias = compute_ego_bias
 
         # Layers
         # Transform layers
@@ -207,18 +210,26 @@ class EgoPredictor(torch.nn.Module):
 
             # Transformer backbone -> (b*2, T_h, d)
             # Difference features as keys and queries in attention layers
-            y, _ = self.T(inputs=torch.concat([f_diff, f_z], dim=-1),
+            f, _ = self.T(inputs=torch.concat([f_diff, f_z], dim=-1),
                           targets=self.tlayer(x_diff),
                           training=training)
 
             # -------------------------------------
             # MARK: - Latency Prediction and Decode
             # -------------------------------------
+            # Unpack features
+            f_nei = f[b:, :, :]
+
+            # This option is only used for ablation
+            if self.compute_ego_bias:
+                f_ego = f[:b, :, :]
+            else:
+                f_ego = f_nei
 
             # Reverberation kernels and transform
-            I = self.k1(y[:b, :, :])            # Using ego's feature
-            R = self.k2(y[b:, :, :])            # Using neighbor's
-            y = self.rev(y[b:, :, :], R, I)     # (b, ins, T_f, d)
+            I = self.k1(f_ego)                  # Using ego's feature
+            R = self.k2(f_nei)                  # Using neighbor's
+            y = self.rev(f_nei, R, I)           # (b, ins, T_f, d)
 
             # Decode predictions
             y = self.decoder(y)                 # (b, ins, T_f, M)

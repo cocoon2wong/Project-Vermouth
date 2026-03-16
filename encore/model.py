@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-21 09:31:53
+@LastEditTime: 2026-03-16 16:09:43
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -74,7 +74,8 @@ class EncoreModel(Model):
             traj_dim=self.dim,
             feature_dim=self.args.feature_dim//2,
             noise_depth=self.args.noise_depth,
-            transform=self.enc_args.T,
+            transform=self.e.T,
+            compute_ego_bias=self.e.compute_ego_bias,
         )
 
         # Linear predictor
