@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-16 20:49:13
+@LastEditTime: 2026-03-23 17:34:15
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -19,9 +19,9 @@ class IntentionPredictor(torch.nn.Module):
     """
     IntentionPredictor
     ---
-    Intention predictor is a normal-sized global predictor.
-    It only considers how agents' intentions changes, without considering
-    further interactive behaviors among egos and neighbors.
+    The intention predictor is a normal-sized global predictor.
+    It only considers how agents' intentions change, without considering
+    further interactive behaviors among ego agents and neighbors.
     """
 
     def __init__(self, obs_steps: int,
@@ -55,7 +55,7 @@ class IntentionPredictor(torch.nn.Module):
         self.linear_diff = LinearDiffEncoding(
             obs_frames=self.t_h,
             traj_dim=self.d_traj,
-            output_units=self.d//2,
+            output_units=self.d // 2,
             transform_type=transform,
             encode_agent_types=encode_agent_types,
         )
@@ -66,9 +66,11 @@ class IntentionPredictor(torch.nn.Module):
         self.T_f, self.M_f = self.itlayer.Tshape
 
         # Noise embedding
-        self.noise_embedding = layers.TrajEncoding(self.d_noise,
-                                                   self.d//2,
-                                                   torch.nn.Tanh)
+        self.noise_embedding = layers.TrajEncoding(
+            input_units=self.d_noise,
+            output_units=self.d // 2,
+            activation=torch.nn.Tanh,
+        )
 
         # Transformer as the feature extractor
         self.T = transformer.Transformer(
@@ -104,7 +106,7 @@ class IntentionPredictor(torch.nn.Module):
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
-        # Linear prediction (least squares) && Encode difference features
+        # Linear prediction (least squares) and encode difference features
         f_ego, d_ego = self.linear_diff(
             x_ego=x_ego,
             ego_types=ego_types,
@@ -113,12 +115,12 @@ class IntentionPredictor(torch.nn.Module):
         # ---------------------------
         # MARK: - Social Interactions
         # ---------------------------
-        # NOTE: Intention predictor does not consider interactions
+        # NOTE: The intention predictor does not consider interactions.
 
         # ----------------------------
         # MARK: - Transformer Backbone
         # ----------------------------
-        # "Max pool" features on all insights
+        # Max-pool features across all insights
         f_ego = torch.max(f_ego, dim=-3)[0]
 
         # Target value for queries
@@ -126,7 +128,7 @@ class IntentionPredictor(torch.nn.Module):
 
         all_predictions = []
         for _ in range(repeats):
-            # Assign random ids and embedding -> (batch, steps, d/2)
+            # Assign random IDs and embeddings -> (batch, steps, d/2)
             z = torch.normal(mean=0, std=1,
                              size=list(f_ego.shape[:-1]) + [self.d_noise])
             f_z = self.noise_embedding(z.to(f_ego.device))

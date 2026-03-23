@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:35:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-01-21 09:27:57
+@LastEditTime: 2026-03-23 17:36:07
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -22,9 +22,9 @@ class SocialPredictor(torch.nn.Module):
     """
     SocialPredictor
     ---
-    Social predictor is a normal-sized global predictor.
-    It use a *Resonance*-like way to model social interactions, therefore
-    forecasting social-aware predictions for each ego.
+    The social predictor is a normal-sized global predictor.
+    It uses a *Resonance*-like method to model social interactions, thereby
+    forecasting socially aware predictions for each ego agent.
     """
 
     def __init__(self, obs_steps: int,
@@ -61,7 +61,7 @@ class SocialPredictor(torch.nn.Module):
         self.linear_diff = LinearDiffEncoding(
             obs_frames=self.t_h,
             traj_dim=self.d_traj,
-            output_units=self.d//2,
+            output_units=self.d // 2,
             transform_type=transform,
             encode_agent_types=encode_agent_types,
         )
@@ -70,13 +70,13 @@ class SocialPredictor(torch.nn.Module):
         # For observations
         self.resonance = ResonanceLayer(
             hidden_feature_dim=self.d,
-            output_feature_dim=self.d//2,
+            output_feature_dim=self.d // 2,
             angle_partitions=self.p,
         )
 
         # Concat layer for `f_ego` and `f_social`
-        self.concat_fc = layers.Dense(self.d//2 + self.d//2,
-                                      self.d//2,
+        self.concat_fc = layers.Dense(self.d // 2 + self.d // 2,
+                                      self.d // 2,
                                       torch.nn.ReLU)
 
         # Transformer backbone
@@ -85,9 +85,11 @@ class SocialPredictor(torch.nn.Module):
         self.T_f, self.M_f = self.itlayer.Tshape
 
         # Noise embedding
-        self.noise_embedding = layers.TrajEncoding(self.d_noise,
-                                                   self.d//2,
-                                                   torch.nn.Tanh)
+        self.noise_embedding = layers.TrajEncoding(
+            input_units=self.d_noise,
+            output_units=self.d // 2,
+            activation=torch.nn.Tanh
+        )
 
         # Transformer as the feature extractor
         self.T = transformer.Transformer(
@@ -123,15 +125,15 @@ class SocialPredictor(torch.nn.Module):
                 mask=None,
                 *args, **kwargs):
         """
-        NOTE: Both `ego_traj` and `nei_trajs` should be absolute values, 
+        NOTE: Both `x_ego` and `x_nei` should use absolute coordinates 
         and share the same sequence length!
         """
 
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
-        # Linear prediction (least squares) && Encode difference features
-        # Apply to both egos' and neighbors' observed trajectories
+        # Linear prediction (least squares) and encode difference features
+        # Apply to both the egos' and neighbors' observed trajectories
         (f_ego, d_ego), (f_nei, _) = self.linear_diff(
             x_ego=x_ego,
             x_nei=x_nei,
@@ -141,8 +143,8 @@ class SocialPredictor(torch.nn.Module):
         # ---------------------------
         # MARK: - Social Interactions
         # ---------------------------
-        # Compute angle-based interactions based on their trust positions
-        # Positions used to compute interactions should be 2D mean trajectories
+        # Compute angle-based interactions based on their trust positions.
+        # Positions used to compute interactions should be 2D mean trajectories.
         x_ego_mean = picker.get_center(x_ego.mean(dim=-3))[..., :2]
         x_nei_mean = picker.get_center(x_nei.mean(dim=-3))[..., :2]
 
@@ -158,18 +160,18 @@ class SocialPredictor(torch.nn.Module):
         # ----------------------------
         # MARK: - Transformer Backbone
         # ----------------------------
-        # "Max pool" features on all insights
+        # Max-pool features across all insights
         f_ego = torch.max(f_ego, dim=-3)[0]
 
-        # Pad features to keep the compatible tensor shape
+        # Pad features to keep a compatible tensor shape.
         # Original shape of `f_ego` is `(batch, T_h, d/2)`
         f_ego = repeat(f_ego, self.p, -2)
 
         # Original shape of `f_social` is `(batch, T_h, partitions, d/2)`
         f_social = torch.flatten(f_social, -3, -2)
 
-        # Concat and fuse social features with trajectory features
-        # It serves as keys and queries in attention layers
+        # Concatenate and fuse social features with trajectory features.
+        # It serves as keys and queries in the attention layers.
         # -> `(batch, steps, d)`, where `steps = T_h * partitions`
         f_ego = torch.concat([f_ego, f_social], dim=-1)
         f_ego = self.concat_fc(f_ego)
@@ -182,7 +184,7 @@ class SocialPredictor(torch.nn.Module):
         # Make random predictions
         all_predictions = []
         for _ in range(repeats):
-            # Assign random ids and embedding -> (batch, steps, d/2)
+            # Assign random IDs and embeddings -> (batch, steps, d/2)
             z = torch.normal(mean=0, std=1,
                              size=list(f_ego.shape[:-1]) + [self.d_noise])
             f_z = self.noise_embedding(z.to(f_ego.device))
@@ -198,11 +200,11 @@ class SocialPredictor(torch.nn.Module):
             # Reverberation kernels and transform
             G = self.k1(y)
             R = self.k2(y)
-            y = self.rev(y, R, G)          # (batch, K_g, T_f, d)
+            y = self.rev(y, R, G)               # (batch, K_g, T_f, d)
 
             # Decode predictions
             y = self.decoder(y)                 # (batch, K_g, T_f, M)
-            y = self.itlayer(y)                     # (batch, K_g, t_f, m)
+            y = self.itlayer(y)                 # (batch, K_g, t_f, m)
 
             all_predictions.append(y)
 

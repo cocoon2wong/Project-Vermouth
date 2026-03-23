@@ -593,7 +593,7 @@ Controls whether to print verbose logs and outputs to the terminal.
 <details markdown="1">
 <summary markdown="span"><code>--distribution_steps</code></summary>
 
-Controls which time step(s) should be considered when visualizing the distribution of forecasted trajectories. It accepts one or more integer numbers (started with 0) split by `'_'`. For example, `'4_8_11'`. Set it to `'all'` to show the distribution of all predictions.
+Controls which time step(s) to consider when visualizing the distribution of forecasted trajectories. Accepts one or more integers (starting from 0) separated by `'_'`. For example, `'4_8_11'`. Set to `'all'` to show the distribution of all predictions.
 
 - Type=`str`, argtype=`temporary`
 - The default value is `all`.
@@ -603,17 +603,19 @@ Controls which time step(s) should be considered when visualizing the distributi
 <details markdown="1">
 <summary markdown="span"><code>--draw_distribution</code> (short for <code>-dd</code>)</summary>
 
-Controls whether to draw distributions of predictions instead of points. If `draw_distribution == 0`, it will draw results as normal coordinates; If `draw_distribution == 1`, it will draw all results in the distribution way, and points from different time steps will be drawn with different colors.
+Controls the bandwidth (smoothing) of the predicted trajectory distributions.
 
-- Type=`int`, argtype=`temporary`
-- The default value is `0`.
+- 0.0: Disable distribution drawing; draw as individual points. - > 0.0: Enable KDE distribution drawing, where this value acts as   the `bw_adjust` parameter to control smoothing (e.g., 0.5).
+
+- Type=`float`, argtype=`temporary`
+- The default value is `0.0`.
 
 </details>
 
 <details markdown="1">
 <summary markdown="span"><code>--draw_exclude_type</code></summary>
 
-Draw visualized results of agents except for user-assigned types. If the assigned types are `"Biker_Cart"` and the `draw_results` or `draw_videos` is not `"null"`, it will draw results of all types of agents except "Biker" and "Cart". It supports partial match, and it is case-sensitive.
+Draw visualized results for all agents except those of user-assigned types. If the assigned types are `"Biker_Cart"` and `draw_results` or  `draw_videos` is not `"null"`, it draws results for all agent types except "Biker" and "Cart". It supports partial matching and is  case-sensitive.
 
 - Type=`str`, argtype=`temporary`
 - The default value is `null`.
@@ -623,7 +625,7 @@ Draw visualized results of agents except for user-assigned types. If the assigne
 <details markdown="1">
 <summary markdown="span"><code>--draw_extra_outputs</code></summary>
 
-Choose whether to draw (put text) extra model outputs on the visualized images.
+(bool) Controls whether to draw (as text) extra model outputs on the visualized images.
 
 - Type=`int`, argtype=`temporary`
 - The default value is `0`.
@@ -633,7 +635,7 @@ Choose whether to draw (put text) extra model outputs on the visualized images.
 <details markdown="1">
 <summary markdown="span"><code>--draw_full_neighbors</code></summary>
 
-Choose whether to draw the full observed trajectories of all neighbor agents or only the last trajectory point at the current observation moment.
+(bool) Controls whether to draw the full observed trajectories of all neighbor agents, rather than only the last trajectory point at the current observation moment.
 
 - Type=`int`, argtype=`temporary`
 - The default value is `0`.
@@ -641,9 +643,19 @@ Choose whether to draw the full observed trajectories of all neighbor agents or 
 </details>
 
 <details markdown="1">
+<summary markdown="span"><code>--draw_groundtruths</code></summary>
+
+(bool) Controls whether to draw ground-truth trajectories during visualization.
+
+- Type=`int`, argtype=`temporary`
+- The default value is `1`.
+
+</details>
+
+<details markdown="1">
 <summary markdown="span"><code>--draw_index</code></summary>
 
-Indexes of test agents to visualize. Numbers are split with `_`. For example, `'123_456_789'`.
+Indices of test agents to visualize. Numbers are separated by `_`. For example, `'123_456_789'`.
 
 - Type=`str`, argtype=`temporary`
 - The default value is `all`.
@@ -653,7 +665,7 @@ Indexes of test agents to visualize. Numbers are split with `_`. For example, `'
 <details markdown="1">
 <summary markdown="span"><code>--draw_lines</code></summary>
 
-Choose whether to draw lines between each two 2D trajectory points.
+(bool) Controls whether to draw lines between consecutive 2D trajectory points.
 
 - Type=`int`, argtype=`temporary`
 - The default value is `0`.
@@ -663,7 +675,17 @@ Choose whether to draw lines between each two 2D trajectory points.
 <details markdown="1">
 <summary markdown="span"><code>--draw_on_empty_canvas</code></summary>
 
-Controls whether to draw visualized results on the empty canvas instead of the actual video.
+Controls whether to draw on an empty (or a single-colored) canvas. Set to `'null'` to disable, or pass a 6-char RGB HEX string (e.g., `'EBEBEB'`).
+
+- Type=`str`, argtype=`temporary`
+- The default value is `null`.
+
+</details>
+
+<details markdown="1">
+<summary markdown="span"><code>--draw_with_plt</code></summary>
+
+(bool) Controls whether to use PLT (matplotlib) as the preferred method for visualizing trajectories on an empty canvas. If disabled, it attempts to visualize all points directly on the scene images.
 
 - Type=`int`, argtype=`temporary`
 - The default value is `0`.
@@ -671,12 +693,22 @@ Controls whether to draw visualized results on the empty canvas instead of the a
 </details>
 
 <details markdown="1">
-<summary markdown="span"><code>--draw_with_plt</code></summary>
+<summary markdown="span"><code>--pred_color_mode</code></summary>
 
-(bool) Choose whether to use PLT as the preferred method for visualizing trajectories (on the empty canvas). It will try to visualize all points on the scene images if this arg is not enabled. .
+An integer indicating how stochastic predictions will be colored. Set to `0` to assign a random color to each specific prediction (shape `t_f * dim`), or `1` to assign the same random color to all predictions of a single agent (shape `K * t_f * dim`).
 
 - Type=`int`, argtype=`temporary`
 - The default value is `0`.
+
+</details>
+
+<details markdown="1">
+<summary markdown="span"><code>--text_scale</code></summary>
+
+A float value used to scale the legend (text, icons, etc.) during visualization. A larger value means text and icons occupy a larger relative proportion of the screen. Must be greater than `0.2`.
+
+- Type=`float`, argtype=`temporary`
+- The default value is `-1.0`.
 
 </details>
 
@@ -686,7 +718,7 @@ Controls whether to draw visualized results on the empty canvas instead of the a
 <details markdown="1">
 <summary markdown="span"><code>--Kg</code></summary>
 
-The number of generations when making predictions. It is also the channels of the generating kernel in the proposed reverberation transform.
+The number of generations when making predictions. It is also the number of channels of the generating kernel in the proposed reverberation transform.
 
 - Type=`int`, argtype=`static`
 - The default value is `20`.
@@ -698,7 +730,7 @@ The number of generations when making predictions. It is also the channels of th
 
 Transform type used to compute trajectory spectrums.
 
-It could be: - `none`: no transformations; - `haar`: haar wavelet transform; - `db2`: DB2 wavelet transform.
+Supported types: - `none`: No transformations. - `haar`: Haar wavelet transform. - `db2`: DB2 wavelet transform.
 
 - Type=`str`, argtype=`static`
 - The default value is `haar`.
@@ -706,9 +738,19 @@ It could be: - `none`: no transformations; - `haar`: haar wavelet transform; - `
 </details>
 
 <details markdown="1">
+<summary markdown="span"><code>--compute_ego_bias</code></summary>
+
+**Ablation Settings:** (bool) Controls whether to compute the ego bias, i.e., the cross-agent bilinear product in the ego predictor. It should only be turned off when performing ablation experiments.
+
+- Type=`int`, argtype=`static`
+- The default value is `1`.
+
+</details>
+
+<details markdown="1">
 <summary markdown="span"><code>--ego_capacity</code></summary>
 
-The number of neighbors (`N`) to be "well-forecasted" by the ego predictor. When there are more numbers of neighbors than this value in the scene, the ego predictor will choose the most-`N` closed neighbors in relation to the ego agent to run the full-size prediction, while other neighbors will be forecasted using a simple linear predictor.
+The number of neighbors (`N`) to be "well-forecasted" by the ego predictor. When there are more than `N` neighbors in the scene, the ego predictor will choose the `N` closest neighbors relative to the ego agent to run the full-size prediction, while other neighbors will be forecasted using a simple linear predictor.
 
 **Ablation Settings:** Note that the full-size Transformer-based ego predictor will be constructed and used for prediction only when `N > 0`. A linear predictor will be used for all neighbors when `N` is set to `0`.
 
@@ -730,7 +772,7 @@ Loss weight of the EgoLoss when training.
 <details markdown="1">
 <summary markdown="span"><code>--ego_t_f</code></summary>
 
-Output length of the ego predicotr.
+Output length of the ego predictor.
 
 - Type=`int`, argtype=`static`
 - The default value is `-1`.
@@ -740,7 +782,7 @@ Output length of the ego predicotr.
 <details markdown="1">
 <summary markdown="span"><code>--ego_t_h</code></summary>
 
-Input length of the ego predicotr.
+Input length of the ego predictor.
 
 - Type=`int`, argtype=`static`
 - The default value is `-1`.
@@ -750,7 +792,7 @@ Input length of the ego predicotr.
 <details markdown="1">
 <summary markdown="span"><code>--encode_agent_types</code></summary>
 
-Choose whether to encode the type name of each agent. It is mainly used in multi-type-agent prediction scenes, providing a unique type-coding for each type of agents when encoding their trajectories.
+(bool) Controls whether to encode the type name of each agent. It is mainly used in multi-type-agent prediction scenes, providing a unique type-coding for each type of agent when encoding their trajectories.
 
 - Type=`int`, argtype=`static`
 - The default value is `0`.
@@ -780,7 +822,7 @@ The number of partitions when computing the angle-based feature. It is only used
 <details markdown="1">
 <summary markdown="span"><code>--use_intention_predictor</code></summary>
 
-**Ablation Settings:** (bool) Choose whether to use the intention prediction as one of the model predictions.
+**Ablation Settings:** (bool) Controls whether to use the intention prediction as one of the model predictions.
 
 - Type=`int`, argtype=`static`
 - The default value is `1`.
@@ -790,7 +832,7 @@ The number of partitions when computing the angle-based feature. It is only used
 <details markdown="1">
 <summary markdown="span"><code>--use_linear</code></summary>
 
-**Ablation Settings:** (bool) Choose whether to use the linear prediction as the base of all other predictions.
+**Ablation Settings:** (bool) Controls whether to use the linear prediction as the base of all other predictions.
 
 - Type=`int`, argtype=`static`
 - The default value is `1`.
@@ -800,7 +842,7 @@ The number of partitions when computing the angle-based feature. It is only used
 <details markdown="1">
 <summary markdown="span"><code>--use_social_predictor</code></summary>
 
-**Ablation Settings:** (bool) Choose whether to use the social prediction as one of the model predictions.
+**Ablation Settings:** (bool) Controls whether to use the social prediction as one of the model predictions.
 
 - Type=`int`, argtype=`static`
 - The default value is `1`.
@@ -810,9 +852,9 @@ The number of partitions when computing the angle-based feature. It is only used
 <details markdown="1">
 <summary markdown="span"><code>--vis_ego_predictor</code></summary>
 
-Choose whether to visualize trajectories forecasted by the ego predictior. It accepts three values:
+Controls whether to visualize trajectories forecasted by the ego predictor. It accepts three values:
 
-- `0`: Do nothing; - `1`: Visualize ego predictor's all predictions; - `2`: Visualize ego predictor's mean predicton for each neighbor.
+- `0`: Do nothing. - `1`: Visualize all predictions of the ego predictor. - `2`: Visualize the ego predictor's mean prediction for each   neighbor.
 
 NOTE that this arg only works in the *Playground* mode, or the program will be killed immediately.
 

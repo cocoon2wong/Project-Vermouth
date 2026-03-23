@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-16 16:01:06
+@LastEditTime: 2026-03-23 17:25:09
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -20,10 +20,10 @@ class EgoPredictor(torch.nn.Module):
     """
     EgoPredictor
     ---
-    Ego predictor is a small predictor hosted by each ego agent.
-    It shares similar but simplified structures as the outer predictor,
-    with a simple Transformer backbone (self-attention only) and no further
-    interaction-modeling components.
+    The ego predictor is a small predictor hosted by each ego agent.
+    It shares a similar but simplified structure compared to the final
+    predictor, featuring a simple Transformer backbone (self-attention only)
+    and no further high-order interaction-modeling components.
     """
 
     def __init__(self, obs_steps: int,
@@ -58,8 +58,8 @@ class EgoPredictor(torch.nn.Module):
         self.itlayer = it_type((self.t_f, self.d_traj))
 
         # Simple trajectory encoder
-        # Only a simple Transformer encoder, with sampled noise vector
-        # It does not consider further interactions among neighbors
+        # This is only a simple Transformer encoder with a sampled noise
+        # vector. It does not consider further interactions among neighbors.
 
         # Linear prediction
         self.linear_predictor = layers.LinearLayerND(
@@ -71,7 +71,7 @@ class EgoPredictor(torch.nn.Module):
         self.linear_diff = LinearDiffEncoding(
             obs_frames=self.t_h,
             traj_dim=self.d_traj,
-            output_units=self.d//2,
+            output_units=self.d // 2,
             transform_type=transform,
             encode_agent_types=False,
             enable_bilinear=False,
@@ -85,7 +85,7 @@ class EgoPredictor(torch.nn.Module):
         # Noise embedding
         self.noise_embedding = layers.TrajEncoding(
             input_units=self.d_noise,
-            output_units=self.d//2,
+            output_units=self.d // 2,
             activation=torch.nn.Tanh
         )
 
@@ -127,7 +127,7 @@ class EgoPredictor(torch.nn.Module):
                 *args, **kwargs):
         """
         Run the ego predictor.
-        NOTE: Both `ego_traj` and `nei_trajs` should be absolute values, 
+        NOTE: Both `x_ego` and `x_nei` should use absolute coordinates 
         and share the same sequence length!
         """
 
@@ -138,17 +138,17 @@ class EgoPredictor(torch.nn.Module):
         # --------------------
         # MARK: - Preprocesses
         # --------------------
-        # Speed up inference #1: Remove all-empty neighbors
-        # Compute max neighbor count within the batch
+        # Speed up inference #1: Remove all-empty neighbors.
+        # Compute the maximum neighbor count within the batch.
         valid_mask = get_mask(torch.sum(torch.abs(x_nei), dim=[-1, -2]))
 
-        # Speed up inference #2: Limit neighbor numbers
+        # Speed up inference #2: Limit the number of neighbors.
         if self.capacity > 0:
-            # Compute relative distance (at the last obs step)
+            # Compute the relative distance (at the last observation step).
             d = torch.norm(x_ego[..., -1:, :] - x_nei[..., -1, :],
                            p=2, dim=-1)
 
-            # Compute the min-distance neighbor mask
+            # Compute the minimum-distance neighbor mask.
             cap_mask = torch.zeros_like(d)
             cap_mask = torch.scatter(
                 input=cap_mask,
@@ -159,25 +159,25 @@ class EgoPredictor(torch.nn.Module):
         else:
             cap_mask = 1
 
-        # Repeat and concat ego and neighbors' obs
+        # Repeat and concatenate the ego and neighbors' observations.
         x_ego = x_ego[..., None, :, :].expand(
             *x_ego.shape[:-2],
             x_nei.shape[-3],
             *x_ego.shape[-2:],
         )
 
-        # Compute final mask && Get neighbors to be considered
+        # Compute the final mask and get the neighbors to be considered.
         indices = torch.nonzero(valid_mask * cap_mask, as_tuple=True)
         x_picked = torch.concat([x_ego, x_nei], dim=-2)[indices]
 
-        # Concat ego and neighbors' trajectories into a `big batch`
+        # Concatenate the ego and neighbors' trajectories into a `big batch`.
         b = x_picked.shape[0]
         x_packed = torch.concat([
             x_picked[..., :self.t_h, :],    # x_ego
             x_picked[..., self.t_h:, :],    # x_nei
         ], dim=0)
 
-        # Move the last obs point to (0, 0)
+        # Move the last observation point to (0, 0).
         ref = x_packed[..., -1:, :]         # (b*2, t_h, dim)
         x_packed = x_packed - ref
 
@@ -187,14 +187,14 @@ class EgoPredictor(torch.nn.Module):
         # Linear prediction (least squares)
         y_nei_linear = self.linear_pred(x_packed)[b:, None, :, :]
 
-        # Encode difference features
-        # Apply to both egos' and neighbors' observed trajectories
+        # Encode difference features.
+        # Apply to both the egos' and neighbors' observed trajectories.
         f_diff, x_diff = self.linear_diff(x_packed)
 
         # ---------------------------
         # MARK: - Social Interactions
         # ---------------------------
-        # NOTE: Ego predictor does not consider interactions
+        # NOTE: The ego predictor does not consider interactions.
 
         # ----------------------------
         # MARK: - Transformer Backbone
@@ -203,13 +203,13 @@ class EgoPredictor(torch.nn.Module):
         all_predictions = []
         repeats = 1
         for _ in range(repeats):
-            # Assign random ids and embedding -> (b*2, T_h, d/2)
+            # Assign random ids and embeddings -> (b*2, T_h, d/2)
             z = torch.normal(mean=0, std=1,
                              size=list(f_diff.shape[:-1]) + [self.d_noise])
             f_z = self.noise_embedding(z.to(f_diff.device))
 
             # Transformer backbone -> (b*2, T_h, d)
-            # Difference features as keys and queries in attention layers
+            # Difference features as keys and queries in the attention layers.
             f, _ = self.T(inputs=torch.concat([f_diff, f_z], dim=-1),
                           targets=self.tlayer(x_diff),
                           training=training)
@@ -220,15 +220,15 @@ class EgoPredictor(torch.nn.Module):
             # Unpack features
             f_nei = f[b:, :, :]
 
-            # This option is only used for ablation
+            # This option is used only for ablations.
             if self.compute_ego_bias:
                 f_ego = f[:b, :, :]
             else:
                 f_ego = f_nei
 
             # Reverberation kernels and transform
-            I = self.k1(f_ego)                  # Using ego's feature
-            R = self.k2(f_nei)                  # Using neighbor's
+            I = self.k1(f_ego)                  # Using the ego's feature
+            R = self.k2(f_nei)                  # Using the neighbor's feature
             y = self.rev(f_nei, R, I)           # (b, ins, T_f, d)
 
             # Decode predictions
@@ -243,11 +243,11 @@ class EgoPredictor(torch.nn.Module):
         # Final predictions
         y_nei = y_nei + y_nei_linear
 
-        # Move back predictions
+        # Move the predictions back to absolute coordinates.
         y_nei = y_nei + ref[b:, None, :, :]
 
-        # Run linear prediction for un-masked neighbors
-        # This is mainly for speeding up computation
+        # Run the linear prediction for un-masked neighbors.
+        # This is mainly to speed up computation.
         y = self.linear_pred(x_nei)
         y = y[..., None, :, :].expand(
             *y.shape[:-2],
@@ -255,7 +255,7 @@ class EgoPredictor(torch.nn.Module):
             *y.shape[-2:],
         )
 
-        # Replace masked neighbors' predictions
+        # Replace masked neighbors' predictions.
         y = y.clone()
         y[indices] = y_nei
 
@@ -266,8 +266,8 @@ class LinearEgoPredictor(torch.nn.Module):
     """
     LinearEgoPredictor
     ---
-    This is the simple linear-prediction-based ego predictor,
-    only used for ablations and discussions.
+    This is a simple linear-prediction-based ego predictor,
+    used only for ablations and discussions.
     """
 
     def __init__(self, obs_steps: int,

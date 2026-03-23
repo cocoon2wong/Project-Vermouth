@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-16 20:30:56
+@LastEditTime: 2026-03-23 19:18:29
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -28,7 +28,12 @@ class EncoreModel(Model):
     """
     EncoreModel
     ---
-    The *Encore* trajectory prediction model.
+    The *Encore* trajectory prediction model. It consists of two main
+    parts: the Ego Predictor and the Final Predictor. The Ego Predictor
+    provides diverse biased short-term future predictions (rehearsals)
+    for all neighboring agents from each ego agent's unique point of
+    view. The Final Predictor then utilizes these biased observations
+    to achieve conditioned final predictions.
     """
 
     def __init__(self, structure=None, *args, **kwargs):
@@ -43,9 +48,9 @@ class EncoreModel(Model):
         self.enc_args = self.args.register_subargs(EncoreArgs, 'enc')
         self.e = self.enc_args  # alias
 
-        # Set model inputs
-        # Types of agents are only used in complex scenes
-        # For other datasets, keep it disabled (through the arg)
+        # Set model inputs.
+        # Types of agents are only used in complex scenes.
+        # For other datasets, keep it disabled (through the arg).
         if not self.e.encode_agent_types:
             self.set_inputs(INPUT_TYPES.OBSERVED_TRAJ,
                             INPUT_TYPES.NEIGHBOR_TRAJ)
@@ -62,7 +67,7 @@ class EncoreModel(Model):
             self.log('Wrong ego predictor settings (`ego_t_h` or `ego_t_f`)!',
                      level='error', raiseError=ValueError)
 
-        # `ego_capacity = 0` is only used in ablations
+        # `ego_capacity = 0` is only used in ablations.
         if self.e.ego_capacity == 0:
             ego_predictor_type = LinearEgoPredictor
         else:
@@ -74,7 +79,7 @@ class EncoreModel(Model):
             insights=self.e.insights,
             capacity=self.e.ego_capacity,
             traj_dim=self.dim,
-            feature_dim=self.args.feature_dim//2,
+            feature_dim=self.args.feature_dim // 2,
             noise_depth=self.args.noise_depth,
             transform=self.e.T,
             compute_ego_bias=self.e.compute_ego_bias,
@@ -85,6 +90,7 @@ class EncoreModel(Model):
         # -----------------------
         # The following networks come from "Reverberation: Learning the
         # Latencies Before Forecasting Trajectories".
+
         # Linear predictor
         self.linear_predictor = layers.LinearLayerND(
             obs_frames=self.args.obs_frames + self.e.ego_t_f,
@@ -124,10 +130,11 @@ class EncoreModel(Model):
         x_ego = self.get_input(inputs, INPUT_TYPES.OBSERVED_TRAJ)
         x_nei = self.get_input(inputs, INPUT_TYPES.NEIGHBOR_TRAJ)
 
-        # Unpacked `x_nei` are relative values, move them back
+        # The unpacked `x_nei` values are relative; convert them back to
+        # absolute coordinates.
         x_nei = x_nei + x_ego[..., None, -1:, :]
 
-        # Get types of all ego agents (if needed)
+        # Get the types of all ego agents (if needed).
         if self.e.encode_agent_types:
             ego_types = self.get_input(inputs, INPUT_TYPES.AGENT_TYPES)
         else:
@@ -142,7 +149,7 @@ class EncoreModel(Model):
         _h = self.enc_args.ego_t_h
         _f = self.enc_args.ego_t_f
 
-        # Training of ego predictor: on observation steps only
+        # Training of the ego predictor: on observation steps only.
         if training:
             yy_nei_train = self.ego_predictor(
                 x_ego=x_ego[..., -(_h + _f):-_f, :],
@@ -150,8 +157,8 @@ class EncoreModel(Model):
                 training=training,
             )  # -> (batch, nei, insights, ego_t_f, dim)
 
-        # Normal use of ego predictor
-        # Also predict ego's trajectory
+        # Normal use of the ego predictor.
+        # Also predict the ego agent's trajectory.
         x_s = self.ego_predictor(
             x_ego=x_ego[..., -_h:, :],
             x_nei=torch.concat([x_ego[..., None, -_h:, :],
@@ -159,8 +166,8 @@ class EncoreModel(Model):
             training=training,
         )  # -> (batch, nei+1, insights, ego_t_f, dim)
 
-        # Unpack ego predictor's predictions and
-        # Concat observations and short-term predictions
+        # Unpack the ego predictor's predictions and concatenate the
+        # observations with the short-term predictions.
         x_ego_extended = torch.concat([
             repeat(x_ego[..., None, :, :], self.e.insights, -3),
             x_s[..., 0, :, :, :]
@@ -219,23 +226,23 @@ class EncoreModel(Model):
             y,
         ]
 
-        # Output predictions and labels to compute EgoLoss
+        # Output predictions and labels to compute the EgoLoss.
         if training:
             returns += [
                 x_nei[..., -_f:, :],
                 yy_nei_train,
             ]
 
-        # Visualize ego predictor's outputs
-        # This only works in the playground mode
+        # Visualize the ego predictor's outputs.
+        # This only works in the playground mode.
         elif v := self.e.vis_ego_predictor:
             if v == 1:
-                e = torch.flatten(x_s, -4, -3)
+                e = x_s
             elif v == 2:
                 yy = torch.mean(x_s, dim=-3)
                 e = yy[..., 1:, :, :]
             else:
-                self.log(f'Wrong `vis_ego_predictor` value recevied: {v}!',
+                self.log(f'Wrong `vis_ego_predictor` value received: {v}!',
                          level='error', raiseError=ValueError)
 
             returns[0] = e

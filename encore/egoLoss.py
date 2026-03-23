@@ -16,6 +16,14 @@ from qpid.utils import get_mask
 
 
 class EgoLoss(BaseLossLayer):
+    """
+    EgoLoss
+    ---
+    The supervision loss for the ego predictor, formulated as a *best-of-K_I*
+    L2 loss. It is computed over the observation period to encourage the
+    multimodality of the ego agent's biases when forecasting the short-term
+    future rehearsals of its neighbors.
+    """
 
     has_unit = True
 
