@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-23 19:18:29
+@LastEditTime: 2026-03-24 17:23:43
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -237,10 +237,14 @@ class EncoreModel(Model):
         # This only works in the playground mode.
         elif v := self.e.vis_ego_predictor:
             if v == 1:
-                e = x_s
+                e = x_s[..., 1:, :, :, :]
+                o = repeat(x_nei[..., None, -1:, :], self.e.insights, dim=-3)
+                e = torch.concat([o, e], dim=-2)
             elif v == 2:
                 yy = torch.mean(x_s, dim=-3)
                 e = yy[..., 1:, :, :]
+                e = torch.concat([x_nei[..., -1:, :], e], dim=-2)
+                e = e[..., None, :, :]
             else:
                 self.log(f'Wrong `vis_ego_predictor` value received: {v}!',
                          level='error', raiseError=ValueError)
