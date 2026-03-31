@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-31 11:26:02
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 10:55:15
+@LastEditTime: 2026-03-31 11:16:16
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -110,7 +110,7 @@ def visualize_insight_kernels(I: torch.Tensor,
     ax.set_ylabel('y')
     ax.set_zlabel('z')
 
-    fig.colorbar(scatter, ax=ax, shrink=0.5, aspect=15)
+    # fig.colorbar(scatter, ax=ax, shrink=0.5, aspect=15)
     ax.set_aspect('equal')
 
     plt.tight_layout()

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 10:54:41
+@LastEditTime: 2026-03-31 11:13:15
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -278,21 +278,23 @@ class EgoPredictor(torch.nn.Module):
         to the provided trajectories. **DO NOT** use this method during the
         model training phase.
         """
-        # Remove invalid trajectories.
-        mask = get_mask(x_ego.abs().sum([-1, -2]))
-        idx = torch.where(mask.bool())
+        # Resort trajectories according to the last point.
+        # Here `x_ego` is actually `x_nei` for the ego agent.
+        d = torch.norm(x_ego[..., -1, :], p=2, dim=-1)
+        batch_id = d.argsort()
+        batch_num = torch.arange(x_ego.shape[0])[:, None]
+        x_ego = x_ego[batch_num, batch_id]
 
         # Assign labels for better visualization
         M, N = x_ego.shape[:2]
         IDs = np.array([[f'b{m}_n{n}' for n in range(N)] for m in range(M)])
 
+        # Remove invalid trajectories.
+        mask = get_mask(x_ego.abs().sum([-1, -2]))
+        idx = torch.where(mask.bool())
+
         x_ego = x_ego[idx]
         IDs = list(IDs[idx])
-
-        # Resort trajectories according to the last point.
-        # Here `x_ego` is actually `x_nei` for the ego agent.
-        d = torch.norm(x_ego[..., -1, :], p=2, dim=-1)
-        x_ego = x_ego[d.argsort()]
 
         # Embedding
         f_diff, x_diff = self.linear_diff(x_ego)
