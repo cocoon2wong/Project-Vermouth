@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-23 17:18:40
+@LastEditTime: 2026-03-31 10:00:47
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -180,6 +180,20 @@ class EncoreArgs(EmptyArgs):
             desc_in_model_summary=('Ablation Settings', 'Compute Ego Bias')
         )
 
+    @property
+    def fix_insight_kernels(self) -> int:
+        """
+        **Ablation Settings:**
+        (bool) Controls whether to use the average agents' (in a batch) insight
+        kernel to replace all other neighboring agents'. It should only be used
+        for conducting further model discussions and *SHOULD NOT* be used
+        during training.
+        A typical experimental scene to use this arg is the `playground`, along
+        side with the arg `predict_all_neighbors` and `pred_color_mode` 
+        (both set to `1`).
+        """
+        return self._arg('fix_insight_kernels', 0, TEMPORARY)
+
     # ----------------
     # MARK: - Vis Args
     # ----------------
@@ -199,6 +213,14 @@ class EncoreArgs(EmptyArgs):
         program will be killed immediately.
         """
         return self._arg('vis_ego_predictor', 0, argtype=TEMPORARY)
+
+    @property
+    def vis_insight_kernels(self) -> int:
+        """
+        (bool) Controls whether to visualize the insight kernels learned by the
+        ego predictor.
+        """
+        return self._arg('vis_insight_kernels', 0, argtype=TEMPORARY)
 
     def _init_all_args(self):
         super()._init_all_args()

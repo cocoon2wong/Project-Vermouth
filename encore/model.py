@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-24 17:23:43
+@LastEditTime: 2026-03-31 09:50:26
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -83,6 +83,7 @@ class EncoreModel(Model):
             noise_depth=self.args.noise_depth,
             transform=self.e.T,
             compute_ego_bias=self.e.compute_ego_bias,
+            fix_insight_kernels=self.e.fix_insight_kernels,
         )
 
         # -----------------------
@@ -156,6 +157,16 @@ class EncoreModel(Model):
                 x_nei=x_nei[..., -(_h + _f):-_f, :],
                 training=training,
             )  # -> (batch, nei, insights, ego_t_f, dim)
+
+        # Visualize the learned ego biases
+        elif (self.e.vis_insight_kernels and
+              isinstance(self.ego_predictor, EgoPredictor)):
+            from .utils import visualize_insight_kernels
+
+            I = self.ego_predictor.compute_insight_kernels(
+                x_ego=x_nei[..., -_h:, :],
+            )
+            visualize_insight_kernels(I)
 
         # Normal use of the ego predictor.
         # Also predict the ego agent's trajectory.

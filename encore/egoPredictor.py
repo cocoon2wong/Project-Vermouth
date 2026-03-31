@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-23 17:25:09
+@LastEditTime: 2026-03-31 10:05:58
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -35,6 +35,7 @@ class EgoPredictor(torch.nn.Module):
                  noise_depth: int,
                  transform: str,
                  compute_ego_bias: bool | int = True,
+                 fix_insight_kernels: bool | int = False,
                  *args, **kwargs):
 
         super().__init__()
@@ -49,7 +50,9 @@ class EgoPredictor(torch.nn.Module):
         self.insights = insights
         self.capacity = capacity
 
+        # Ablation Settings
         self.compute_ego_bias = compute_ego_bias
+        self.fix_insight_kernels = fix_insight_kernels
 
         # Layers
         # Transform layers
@@ -229,6 +232,13 @@ class EgoPredictor(torch.nn.Module):
             # Reverberation kernels and transform
             I = self.k1(f_ego)                  # Using the ego's feature
             R = self.k2(f_nei)                  # Using the neighbor's feature
+
+            # NOTE that this is only used to conduct ablation discussions
+            # after the model training.
+            if not training and self.fix_insight_kernels:
+                I = torch.mean(I, dim=0)[None]
+                I = torch.repeat_interleave(I, b, dim=0)
+
             y = self.rev(f_nei, R, I)           # (b, ins, T_f, d)
 
             # Decode predictions
@@ -260,6 +270,39 @@ class EgoPredictor(torch.nn.Module):
         y[indices] = y_nei
 
         return y
+
+    def compute_insight_kernels(self, x_ego: torch.Tensor) -> torch.Tensor:
+        """
+        This method is only used to compute the insight kernels according
+        to the provided trajectories. **DO NOT** use this method during the
+        model training phase.
+        """
+        # Remove invalid trajectories.
+        mask = get_mask(x_ego.abs().sum([-1, -2]))
+        idx = torch.where(mask.bool())
+        x_ego = x_ego[idx]
+
+        # Resort trajectories according to the last point.
+        # Here `x_ego` is actually `x_nei` for the ego agent.
+        d = torch.norm(x_ego[..., -1, :], p=2, dim=-1)
+        x_ego = x_ego[d.argsort()]
+
+        # Embedding
+        f_diff, x_diff = self.linear_diff(x_ego)
+
+        # Assign random ids and embeddings -> (b*2, T_h, d/2)
+        z = torch.zeros(list(f_diff.shape[:-1]) + [self.d_noise])
+        f_z = self.noise_embedding(z.to(f_diff.device))
+
+        # Transformer backbone -> (b*2, T_h, d)
+        # Difference features as keys and queries in the attention layers.
+        f, _ = self.T(inputs=torch.concat([f_diff, f_z], dim=-1),
+                      targets=self.tlayer(x_diff),
+                      training=None)
+
+        # Compute the insight kernel
+        I = self.k1(f)
+        return I
 
 
 class LinearEgoPredictor(torch.nn.Module):
