@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-31 11:26:02
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 10:06:52
+@LastEditTime: 2026-03-31 10:55:15
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -48,7 +48,9 @@ def print_variable_summary(locals):
         print("SUMMARY: 0 tensors")
 
 
-def visualize_insight_kernels(I: torch.Tensor, title='Insight Kernels (PCA)'):
+def visualize_insight_kernels(I: torch.Tensor,
+                              IDs: list[str],
+                              title='Insight Kernels (PCA)'):
 
     points = I.mean(dim=-2).cpu()
 
@@ -73,7 +75,7 @@ def visualize_insight_kernels(I: torch.Tensor, title='Insight Kernels (PCA)'):
                          alpha=0.8, edgecolors='w',
                          linewidth=0.5)
 
-    if N < 100:
+    if N < 50:
         bbox_props = dict(
             boxstyle='round,pad=0.3',
             facecolor='gray',
@@ -92,6 +94,17 @@ def visualize_insight_kernels(I: torch.Tensor, title='Insight Kernels (PCA)'):
                     ha='center',
                     va='center',
                     bbox=bbox_props)
+
+    else:
+        import mplcursors
+
+        cursor = mplcursors.cursor(scatter, hover=True)
+
+        @cursor.connect("add")
+        def on_add(sel):
+            label = IDs[sel.index]
+            sel.annotation.set_text(label)
+            sel.annotation.get_bbox_patch().set(fc="gray", alpha=0.5)
 
     ax.set_xlabel('x')
     ax.set_ylabel('y')

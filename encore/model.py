@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 09:50:26
+@LastEditTime: 2026-03-31 10:37:10
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -163,10 +163,10 @@ class EncoreModel(Model):
               isinstance(self.ego_predictor, EgoPredictor)):
             from .utils import visualize_insight_kernels
 
-            I = self.ego_predictor.compute_insight_kernels(
+            I, IDs = self.ego_predictor.compute_insight_kernels(
                 x_ego=x_nei[..., -_h:, :],
             )
-            visualize_insight_kernels(I)
+            visualize_insight_kernels(I, IDs)
 
         # Normal use of the ego predictor.
         # Also predict the ego agent's trajectory.

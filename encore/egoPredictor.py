@@ -2,11 +2,12 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 10:05:58
+@LastEditTime: 2026-03-31 10:54:41
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
+import numpy as np
 import torch
 
 from qpid.model import layers, transformer
@@ -271,7 +272,7 @@ class EgoPredictor(torch.nn.Module):
 
         return y
 
-    def compute_insight_kernels(self, x_ego: torch.Tensor) -> torch.Tensor:
+    def compute_insight_kernels(self, x_ego: torch.Tensor) -> tuple[torch.Tensor, list[str]]:
         """
         This method is only used to compute the insight kernels according
         to the provided trajectories. **DO NOT** use this method during the
@@ -280,7 +281,13 @@ class EgoPredictor(torch.nn.Module):
         # Remove invalid trajectories.
         mask = get_mask(x_ego.abs().sum([-1, -2]))
         idx = torch.where(mask.bool())
+
+        # Assign labels for better visualization
+        M, N = x_ego.shape[:2]
+        IDs = np.array([[f'b{m}_n{n}' for n in range(N)] for m in range(M)])
+
         x_ego = x_ego[idx]
+        IDs = list(IDs[idx])
 
         # Resort trajectories according to the last point.
         # Here `x_ego` is actually `x_nei` for the ego agent.
@@ -302,7 +309,7 @@ class EgoPredictor(torch.nn.Module):
 
         # Compute the insight kernel
         I = self.k1(f)
-        return I
+        return I, IDs
 
 
 class LinearEgoPredictor(torch.nn.Module):
