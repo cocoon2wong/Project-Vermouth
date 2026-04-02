@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-02 19:24:08
+@LastEditTime: 2026-04-02 20:52:32
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -253,15 +253,30 @@ class EncoreModel(Model):
         # Visualize the ego predictor's outputs.
         # This only works in the playground mode.
         elif v := self.e.vis_ego_predictor:
-            if v == 1:
+            if v in ['1', str(True)] or 'k' in v:
+
+                if 'k' in v:
+                    if (k := int(v[1:])) >= self.e.insights:
+                        self.log(f'Wrong visualization settings: `{v}`!',
+                                 level='error',
+                                 raiseError=ValueError)
+
+                    x_s = x_s[..., k: k+1, :, :]
+                    count = 1
+
+                else:
+                    count = self.e.insights
+
                 e = x_s[..., 1:, :, :, :]
-                o = repeat(x_nei[..., None, -1:, :], self.e.insights, dim=-3)
+                o = repeat(x_nei[..., None, -1:, :], count, dim=-3)
                 e = torch.concat([o, e], dim=-2)
-            elif v == 2:
+
+            elif v == '2':
                 yy = torch.mean(x_s, dim=-3)
                 e = yy[..., 1:, :, :]
                 e = torch.concat([x_nei[..., -1:, :], e], dim=-2)
                 e = e[..., None, :, :]
+
             else:
                 self.log(f'Wrong `vis_ego_predictor` value received: {v}!',
                          level='error', raiseError=ValueError)

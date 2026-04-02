@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-02 20:17:24
+@LastEditTime: 2026-04-02 20:27:05
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -199,20 +199,23 @@ class EncoreArgs(EmptyArgs):
     # ----------------
 
     @property
-    def vis_ego_predictor(self) -> int:
+    def vis_ego_predictor(self) -> str:
         """
         Controls whether to visualize trajectories forecasted by the ego
-        predictor. It accepts three values:
+        predictor. It accepts four kinds of string values:
 
         - `0`: Do nothing.
         - `1`: Visualize all predictions of the ego predictor.
         - `2`: Visualize the ego predictor's mean prediction for each
           neighbor.
+        - `kn`: Visualize the *n*th rehearsals (from all $K_I$ insights).
+          For example, `--vis_ego_predictor k1`. NOTE that the *n* should be
+          less than the number of insights (controlled by arg `insights`).
 
         NOTE that this arg only works in the *Playground* mode, or the
         program will be killed immediately.
         """
-        return self._arg('vis_ego_predictor', 0, argtype=TEMPORARY)
+        return self._arg('vis_ego_predictor', '0', argtype=TEMPORARY)
 
     @property
     def vis_insight_kernels(self) -> int:
@@ -264,7 +267,7 @@ class EncoreArgs(EmptyArgs):
                 level='error', raiseError=ValueError
             )
 
-        if ((self.vis_ego_predictor)
+        if ((self.vis_ego_predictor != '0')
                 and (self._terminal_args is not None)
                 and ('playground' not in ''.join(self._terminal_args))):
             self.log(
