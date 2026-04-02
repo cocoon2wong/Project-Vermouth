@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 10:37:10
+@LastEditTime: 2026-04-02 19:24:08
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -212,6 +212,12 @@ class EncoreModel(Model):
                 ego_types=ego_types,
                 training=training,
             )
+
+            if not training and self.e.vis_self_bias_activations:
+                self.intention_predictor.vis_activations(
+                    x_ego=x_ego_extended,
+                    ego_types=ego_types,
+                )
         else:
             y_intention = 0
 

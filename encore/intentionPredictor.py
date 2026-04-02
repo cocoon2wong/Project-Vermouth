@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-23 17:34:15
+@LastEditTime: 2026-04-02 20:14:27
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -154,3 +154,26 @@ class IntentionPredictor(torch.nn.Module):
 
         # Stack all outputs -> (batch, K, t_f, m)
         return torch.concat(all_predictions, dim=-3)
+
+    def vis_activations(self, x_ego: torch.Tensor,
+                        ego_types: torch.Tensor | None = None):
+        """
+        This method is only used for visualizing the feature selection after
+        the max-pooling, i.e., the feature-level bias conditioning.
+        Shape of the input `x_ego` should be `(batch, insights, obs, dim)`.
+        """
+        from .utils import visualize_max_activations
+
+        # Embed and encode
+        # -> (batch, insights, obs, dim)
+        f_ego, _ = self.linear_diff(
+            x_ego=x_ego,
+            ego_types=ego_types,
+        )
+
+        # Average features across the batch
+        f_batch = torch.mean(f_ego, dim=0)
+
+        # Start visualizing
+        t = 'Feature Activations (self-Bias)'
+        visualize_max_activations(f_batch, title=t)
