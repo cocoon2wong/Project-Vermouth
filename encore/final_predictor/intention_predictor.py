@@ -1,35 +1,30 @@
 """
 @Author: Conghao Wong
-@Date: 2025-12-24 19:35:52
+@Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-23 17:36:07
+@LastEditTime: 2026-04-03 10:19:59
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
 
 import torch
 
-from qpid.dataset import Annotation
 from qpid.model import layers, transformer
 
-from .linearDiffEncoding import LinearDiffEncoding
-from .resonanceLayer import ResonanceLayer
-from .reverberationTransform import KernelLayer, ReverberationTransform
-from .utils import repeat
+from ..layers import KernelLayer, LinearDiffEncoding, ReverberationTransform
 
 
-class SocialPredictor(torch.nn.Module):
+class IntentionPredictor(torch.nn.Module):
     """
-    SocialPredictor
+    IntentionPredictor
     ---
-    The social predictor is a normal-sized global predictor.
-    It uses a *Resonance*-like method to model social interactions, thereby
-    forecasting socially aware predictions for each ego agent.
+    The intention predictor is a normal-sized global predictor.
+    It only considers how agents' intentions change, without considering
+    further interactive behaviors among ego agents and neighbors.
     """
 
     def __init__(self, obs_steps: int,
                  pred_steps: int,
-                 partitions: int,
                  generations: int,
                  traj_dim: int,
                  feature_dim: int,
@@ -48,7 +43,6 @@ class SocialPredictor(torch.nn.Module):
         self.d_traj = traj_dim
         self.d_noise = noise_depth
         self.K_g = generations
-        self.p = partitions
 
         # Layers
         # Transform layers
@@ -57,7 +51,6 @@ class SocialPredictor(torch.nn.Module):
         self.itlayer = it_type((self.t_f, self.d_traj))
 
         # Linear difference encoding (embedding)
-        # For observations
         self.linear_diff = LinearDiffEncoding(
             obs_frames=self.t_h,
             traj_dim=self.d_traj,
@@ -65,19 +58,6 @@ class SocialPredictor(torch.nn.Module):
             transform_type=transform,
             encode_agent_types=encode_agent_types,
         )
-
-        # Resonance layer (for computing social interactions)
-        # For observations
-        self.resonance = ResonanceLayer(
-            hidden_feature_dim=self.d,
-            output_feature_dim=self.d // 2,
-            angle_partitions=self.p,
-        )
-
-        # Concat layer for `f_ego` and `f_social`
-        self.concat_fc = layers.Dense(self.d // 2 + self.d // 2,
-                                      self.d // 2,
-                                      torch.nn.ReLU)
 
         # Transformer backbone
         # Shapes
@@ -88,17 +68,17 @@ class SocialPredictor(torch.nn.Module):
         self.noise_embedding = layers.TrajEncoding(
             input_units=self.d_noise,
             output_units=self.d // 2,
-            activation=torch.nn.Tanh
+            activation=torch.nn.Tanh,
         )
 
         # Transformer as the feature extractor
         self.T = transformer.Transformer(
-            num_layers=2,
+            num_layers=4,
             num_heads=8,
             d_model=self.d,
             dff=512,
-            pe_input=self.T_h * self.p,
-            pe_target=self.T_h * self.p,
+            pe_input=self.T_h,
+            pe_target=self.T_h,
             input_vocab_size=self.M_h,
             target_vocab_size=self.M_h,
             include_top=False,
@@ -109,7 +89,7 @@ class SocialPredictor(torch.nn.Module):
         self.k2 = KernelLayer(self.d, self.d, self.T_f)
 
         self.rev = ReverberationTransform(
-            historical_steps=self.T_h * self.p,
+            historical_steps=self.T_h,
             future_steps=self.T_f,
         )
 
@@ -117,45 +97,24 @@ class SocialPredictor(torch.nn.Module):
         self.decoder = layers.Dense(self.d, self.M_f)
 
     def forward(self, x_ego: torch.Tensor,
-                x_nei: torch.Tensor,
                 repeats: int,
-                picker: Annotation,
                 ego_types: torch.Tensor | None = None,
                 training=None,
-                mask=None,
                 *args, **kwargs):
-        """
-        NOTE: Both `x_ego` and `x_nei` should use absolute coordinates 
-        and share the same sequence length!
-        """
 
         # ------------------------
         # MARK: - Embed and Encode
         # ------------------------
         # Linear prediction (least squares) and encode difference features
-        # Apply to both the egos' and neighbors' observed trajectories
-        (f_ego, d_ego), (f_nei, _) = self.linear_diff(
+        f_ego, d_ego = self.linear_diff(
             x_ego=x_ego,
-            x_nei=x_nei,
             ego_types=ego_types,
         )
 
         # ---------------------------
         # MARK: - Social Interactions
         # ---------------------------
-        # Compute angle-based interactions based on their trust positions.
-        # Positions used to compute interactions should be 2D mean trajectories.
-        x_ego_mean = picker.get_center(x_ego.mean(dim=-3))[..., :2]
-        x_nei_mean = picker.get_center(x_nei.mean(dim=-3))[..., :2]
-
-        # See "Resonance: Learning to Predict Social-Aware Pedestrian
-        # Trajectories as Co-Vibrations"
-        f_social = self.resonance(
-            x_ego_mean=x_ego_mean,
-            x_nei_mean=x_nei_mean,
-            f_ego=f_ego,
-            f_nei=f_nei,
-        )  # -> (batch, T_h, partitions, d/2)
+        # NOTE: The intention predictor does not consider interactions.
 
         # ----------------------------
         # MARK: - Transformer Backbone
@@ -163,25 +122,9 @@ class SocialPredictor(torch.nn.Module):
         # Max-pool features across all insights
         f_ego = torch.max(f_ego, dim=-3)[0]
 
-        # Pad features to keep a compatible tensor shape.
-        # Original shape of `f_ego` is `(batch, T_h, d/2)`
-        f_ego = repeat(f_ego, self.p, -2)
-
-        # Original shape of `f_social` is `(batch, T_h, partitions, d/2)`
-        f_social = torch.flatten(f_social, -3, -2)
-
-        # Concatenate and fuse social features with trajectory features.
-        # It serves as keys and queries in the attention layers.
-        # -> `(batch, steps, d)`, where `steps = T_h * partitions`
-        f_ego = torch.concat([f_ego, f_social], dim=-1)
-        f_ego = self.concat_fc(f_ego)
-
         # Target value for queries
-        # -> (batch, T_h * partitions, M)
         targets = self.tlayer(torch.mean(d_ego, dim=-3))
-        targets = repeat(targets, self.p, -2)
 
-        # Make random predictions
         all_predictions = []
         for _ in range(repeats):
             # Assign random IDs and embeddings -> (batch, steps, d/2)
@@ -200,13 +143,49 @@ class SocialPredictor(torch.nn.Module):
             # Reverberation kernels and transform
             G = self.k1(y)
             R = self.k2(y)
-            y = self.rev(y, R, G)               # (batch, K_g, T_f, d)
+            y = self.rev(y, R, G)       # (batch, K_g, T_f, d)
 
             # Decode predictions
-            y = self.decoder(y)                 # (batch, K_g, T_f, M)
-            y = self.itlayer(y)                 # (batch, K_g, t_f, m)
+            y = self.decoder(y)         # (batch, K_g, T_f, M)
+            y = self.itlayer(y)         # (batch, K_g, t_f, m)
 
             all_predictions.append(y)
 
         # Stack all outputs -> (batch, K, t_f, m)
         return torch.concat(all_predictions, dim=-3)
+
+    def vis_activations(self, trajs: torch.Tensor,
+                        ego_types: torch.Tensor | None = None,
+                        vis_mode: int = 1):
+        """
+        This method is only used for visualizing the feature selection after
+        the max-pooling, i.e., the feature-level bias conditioning.
+        Shape of the input `x_ego` should be `(batch, insights, obs, dim)`.
+
+        `vis_mode` accepts three values:
+        - `1`: Regular visualization.
+        - `2`: Visualize activations of mean trajectories additionally.
+        - `3`: Visualize absolute deviation instead of activations.
+        """
+        from ..utils import visualize_activations
+
+        if vis_mode == 1:
+            mean_traj = torch.mean(trajs, dim=-3, keepdim=True)
+            trajs = torch.concat([trajs, mean_traj], dim=-3)
+
+        # Embed and encode
+        # -> (batch, insights, obs, dim)
+        f_ego, _ = self.linear_diff(
+            x_ego=trajs,
+            ego_types=ego_types,
+        )
+
+        # Average features across the batch
+        f_batch = torch.mean(f_ego, dim=0)
+
+        # Start visualizing
+        visualize_activations(
+            f=f_batch,
+            title='Feature Activations (self-Bias)',
+            mean_included=True if vis_mode == 2 else False
+        )

@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-31 11:13:15
+@LastEditTime: 2026-04-03 10:21:36
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -13,8 +13,7 @@ import torch
 from qpid.model import layers, transformer
 from qpid.utils import get_mask
 
-from .linearDiffEncoding import LinearDiffEncoding
-from .reverberationTransform import KernelLayer, ReverberationTransform
+from ..layers import KernelLayer, LinearDiffEncoding, ReverberationTransform
 
 
 class EgoPredictor(torch.nn.Module):

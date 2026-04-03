@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-02 20:27:05
+@LastEditTime: 2026-04-03 10:31:01
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -204,7 +204,7 @@ class EncoreArgs(EmptyArgs):
         Controls whether to visualize trajectories forecasted by the ego
         predictor. It accepts four kinds of string values:
 
-        - `0`: Do nothing.
+        - `0`: Do nothing *(Default)*.
         - `1`: Visualize all predictions of the ego predictor.
         - `2`: Visualize the ego predictor's mean prediction for each
           neighbor.
@@ -228,10 +228,16 @@ class EncoreArgs(EmptyArgs):
     @property
     def vis_self_bias_activations(self) -> int:
         """
-        (bool) Controls whether to visualize the feature selection results of
+        Controls whether to visualize the feature selection results of
         the feature-level conditioning for the self-bias term. This only works
         when the intention predictor is enabled during training through the arg
         `use_intention_predictor`.
+
+        It accepts three values:
+        - `0`: Do nothing *(Default)*.
+        - `1`: Regular visualization.
+        - `2`: Visualization while additionally displaying the activation of
+          the mean trajectory.
         """
         return self._arg('vis_self_bias_activations', 0, argtype=TEMPORARY)
 

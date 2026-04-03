@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-02 20:52:32
+@LastEditTime: 2026-04-03 10:27:13
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -16,11 +16,9 @@ from qpid.model import Model, layers
 from qpid.training import Structure
 from qpid.training.loss import l2
 
-from .__args import EncoreArgs
-from .egoLoss import EgoLoss
-from .egoPredictor import EgoPredictor, LinearEgoPredictor
-from .intentionPredictor import IntentionPredictor
-from .socialPredictor import SocialPredictor
+from .ego_predictor import (EgoLoss, EgoPredictor, EncoreArgs,
+                            LinearEgoPredictor)
+from .final_predictor import IntentionPredictor, SocialPredictor
 from .utils import repeat
 
 
@@ -213,10 +211,11 @@ class EncoreModel(Model):
                 training=training,
             )
 
-            if not training and self.e.vis_self_bias_activations:
+            if not training and (a := self.e.vis_self_bias_activations):
                 self.intention_predictor.vis_activations(
-                    x_ego=x_ego_extended,
+                    trajs=x_ego_extended,
                     ego_types=ego_types,
+                    vis_mode=a,
                 )
         else:
             y_intention = 0
@@ -252,7 +251,7 @@ class EncoreModel(Model):
 
         # Visualize the ego predictor's outputs.
         # This only works in the playground mode.
-        elif v := self.e.vis_ego_predictor:
+        elif (v := self.e.vis_ego_predictor) != '0':
             if v in ['1', str(True)] or 'k' in v:
 
                 if 'k' in v:

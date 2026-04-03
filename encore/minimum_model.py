@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2026-03-16 20:19:46
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-03-16 21:03:51
+@LastEditTime: 2026-04-03 10:23:48
 @Github: https://cocoon2wong.github.io
 @Copyright 2026 Conghao Wong, All Rights Reserved.
 """
@@ -16,9 +16,8 @@ from qpid.model import Model, layers, transformer
 from qpid.training import Structure
 from qpid.training.loss import l2
 
-from .__args import EncoreArgs
-from .egoLoss import EgoLoss
-from .egoPredictor import EgoPredictor, LinearEgoPredictor
+from .ego_predictor import (EgoLoss, EgoPredictor, EncoreArgs,
+                            LinearEgoPredictor)
 from .utils import repeat
 
 
