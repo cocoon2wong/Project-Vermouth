@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:31:01
+@LastEditTime: 2026-04-03 10:55:18
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -226,7 +226,7 @@ class EncoreArgs(EmptyArgs):
         return self._arg('vis_insight_kernels', 0, argtype=TEMPORARY)
 
     @property
-    def vis_self_bias_activations(self) -> int:
+    def vis_self_activations(self) -> int:
         """
         Controls whether to visualize the feature selection results of
         the feature-level conditioning for the self-bias term. This only works
@@ -238,8 +238,9 @@ class EncoreArgs(EmptyArgs):
         - `1`: Regular visualization.
         - `2`: Visualization while additionally displaying the activation of
           the mean trajectory.
+        - `3`: Visualize absolute feature deviation instead of activations.
         """
-        return self._arg('vis_self_bias_activations', 0, argtype=TEMPORARY)
+        return self._arg('vis_self_activations', 0, argtype=TEMPORARY)
 
     def _init_all_args(self):
         super()._init_all_args()

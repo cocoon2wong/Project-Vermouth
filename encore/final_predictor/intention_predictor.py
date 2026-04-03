@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-24 19:13:28
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:19:59
+@LastEditTime: 2026-04-03 10:48:16
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -167,9 +167,9 @@ class IntentionPredictor(torch.nn.Module):
         - `2`: Visualize activations of mean trajectories additionally.
         - `3`: Visualize absolute deviation instead of activations.
         """
-        from ..utils import visualize_activations
+        from ..utils import vis_activations
 
-        if vis_mode == 1:
+        if vis_mode == 2:
             mean_traj = torch.mean(trajs, dim=-3, keepdim=True)
             trajs = torch.concat([trajs, mean_traj], dim=-3)
 
@@ -184,8 +184,9 @@ class IntentionPredictor(torch.nn.Module):
         f_batch = torch.mean(f_ego, dim=0)
 
         # Start visualizing
-        visualize_activations(
+        vis_activations(
             f=f_batch,
             title='Feature Activations (self-Bias)',
-            mean_included=True if vis_mode == 2 else False
+            mean_included=True if vis_mode == 2 else False,
+            deviation_mode=True if vis_mode == 3 else False,
         )

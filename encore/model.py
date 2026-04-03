@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:27:13
+@LastEditTime: 2026-04-03 10:53:51
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -16,8 +16,8 @@ from qpid.model import Model, layers
 from qpid.training import Structure
 from qpid.training.loss import l2
 
-from .ego_predictor import (EgoLoss, EgoPredictor, EncoreArgs,
-                            LinearEgoPredictor)
+from .args import EncoreArgs
+from .ego_predictor import EgoLoss, EgoPredictor, LinearEgoPredictor
 from .final_predictor import IntentionPredictor, SocialPredictor
 from .utils import repeat
 
@@ -211,7 +211,7 @@ class EncoreModel(Model):
                 training=training,
             )
 
-            if not training and (a := self.e.vis_self_bias_activations):
+            if not training and (a := self.e.vis_self_activations):
                 self.intention_predictor.vis_activations(
                     trajs=x_ego_extended,
                     ego_types=ego_types,

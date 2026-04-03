@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2026-04-03 10:00:29
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:01:41
+@LastEditTime: 2026-04-03 10:45:55
 @Github: https://cocoon2wong.github.io
 @Copyright 2026 Conghao Wong, All Rights Reserved.
 """
@@ -15,9 +15,10 @@ import numpy as np
 import torch
 
 
-def visualize_activations(f: torch.Tensor,
-                          title='Feature Activations',
-                          mean_included: bool = False):
+def vis_activations(f: torch.Tensor,
+                    title='Feature Activations',
+                    mean_included: bool = False,
+                    deviation_mode: bool = False):
     """
     Visualize all selected features after applying the feature-level
     conditioning (dimension-wise max-pooling) on the feature of
@@ -25,6 +26,20 @@ def visualize_activations(f: torch.Tensor,
     Shape of the input feature `f` should be `(K_I, obs, d)`.
     """
     k, obs, d = f.shape[-3:]
+
+    # Visualize feature deviations
+    if deviation_mode:
+        f = torch.abs(f - f.mean(dim=0, keepdim=True))
+        mode_str = 'Deviated'
+        label_str = 'Abs Deviation'
+
+        if 'Activations' in title:
+            title = title.replace('Activations', 'Deviations')
+
+    # Visualize feature activations (maxpool)
+    else:
+        mode_str = 'Activated'
+        label_str = 'Value'
 
     v_max = f.max().item()
     v_min = f.min().item()
@@ -86,7 +101,7 @@ def visualize_activations(f: torch.Tensor,
         else:
             s = f'Rehearsal #{_k}'
 
-        ax.set_ylabel(f'{s}\n({percent}% Activated)')
+        ax.set_ylabel(f'{s}\n({percent}% {mode_str})')
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_box_aspect(obs / d)
@@ -95,6 +110,7 @@ def visualize_activations(f: torch.Tensor,
     mappable = cm.ScalarMappable(norm=norm, cmap=cmap_color)
     cbar = fig.colorbar(mappable, ax=axes, location='right',
                         fraction=0.02, pad=0.02)
-    cbar.set_label('Value (Color: Activated / Gray: Others)')
+
+    cbar.set_label(f'{label_str} (Color: {mode_str} / Gray: Others)')
 
     plt.show()

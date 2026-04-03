@@ -8,5 +8,5 @@
 """
 
 from .__tools import print_variable_summary, repeat
-from .__vis_activations import visualize_activations
+from .__vis_activations import vis_activations
 from .__vis_bias_distribution import visualize_insight_kernels
