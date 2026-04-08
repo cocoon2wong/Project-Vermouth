@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:10:53
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:53:51
+@LastEditTime: 2026-04-07 11:23:17
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -232,6 +232,14 @@ class EncoreModel(Model):
                 ego_types=ego_types,
                 training=training,
             )
+
+            if not training and (a := self.e.vis_social_activations) != '0':
+                self.social_predictor.vis_activations(
+                    nei_trajs=x_nei_extended,
+                    original_obs_len=self.args.obs_frames,
+                    ego_types=ego_types,
+                    vis_mode=a,
+                )
         else:
             y_social = 0
 

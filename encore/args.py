@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-02 11:09:18
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:55:18
+@LastEditTime: 2026-04-08 09:29:45
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -241,6 +241,28 @@ class EncoreArgs(EmptyArgs):
         - `3`: Visualize absolute feature deviation instead of activations.
         """
         return self._arg('vis_self_activations', 0, argtype=TEMPORARY)
+
+    @property
+    def vis_social_activations(self) -> str:
+        """
+        Controls whether to visualize the feature selection results of
+        the feature-level conditioning for the social-bias term. This only works
+        when the intention predictor is enabled during training through the arg
+        `use_social_predictor`.
+
+        It accepts three values:
+        - `0`: Do nothing *(Default)*.
+        - `1`: Regular visualization.
+        - `2`: Visualization while additionally displaying the activation of
+          the mean trajectory.
+        - `3`: Visualize absolute feature deviation instead of activations.
+
+        Additionally, the default visualization neighbor is the zeroth neighbor
+        (the ego itself) sorted by Euclidean distance. Neighbor IDs can be input
+        as concatenated strings. For example, `1_3` refers to the third neighbor
+        in mode 1 (Regular visualization).
+        """
+        return self._arg('vis_social_activations', '0', argtype=TEMPORARY)
 
     def _init_all_args(self):
         super()._init_all_args()

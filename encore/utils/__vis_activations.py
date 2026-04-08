@@ -2,10 +2,12 @@
 @Author: Conghao Wong
 @Date: 2026-04-03 10:00:29
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:45:55
+@LastEditTime: 2026-04-08 09:29:10
 @Github: https://cocoon2wong.github.io
 @Copyright 2026 Conghao Wong, All Rights Reserved.
 """
+
+import os
 
 import matplotlib.cm as cm
 import matplotlib.colors as colors
@@ -13,11 +15,13 @@ import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 
 def vis_activations(f: torch.Tensor,
                     title='Feature Activations',
-                    mean_included: bool = False,
+                    last_row_name: str | None = None,
                     deviation_mode: bool = False):
     """
     Visualize all selected features after applying the feature-level
@@ -26,6 +30,13 @@ def vis_activations(f: torch.Tensor,
     Shape of the input feature `f` should be `(K_I, obs, d)`.
     """
     k, obs, d = f.shape[-3:]
+
+    # Colors for deactivated features
+    rng = np.random.default_rng(seed=42)
+
+    # RGB -> BGR
+    c = 0.6 + 0.4 * rng.random((k, 3))
+    c = np.column_stack([c.T[2], c.T[1], c.T[0]])
 
     # Visualize feature deviations
     if deviation_mode:
@@ -52,28 +63,30 @@ def vis_activations(f: torch.Tensor,
     norm_data = norm(f.cpu().numpy())
 
     # Activated: RGB colors
-    # Deactivated: Grey colors
+    # Deactivated: Random gradient colors (per matrix)
     cmap_color = cm.get_cmap('viridis')
     rgb_color = cmap_color(norm_data)[..., :3]
 
     # -> (KI, obs, d, 3)
-    gray_val = norm_data    # (k, obs, d)
-    rgb_gray = np.stack([gray_val, gray_val, gray_val], axis=-1)
-
-    # Color activated parts
-    final_rgb = rgb_gray.copy()
+    final_rgb = np.zeros((k, obs, d, 3))
 
     for _k in range(k):
+        final_rgb[_k] = 0.3 + 0.7 * norm_data[_k, ..., None] * c[_k]
         mask = (activate_idx == _k).cpu().numpy()
         final_rgb[_k][mask] = rgb_color[_k][mask]
 
     # Start visualizing
     plt.close(title)
+    axes: list[Axes]
 
-    fig, axes = plt.subplots(k, 1, figsize=(d * 0.25, k * obs * 0.3),
-                             sharex=True, constrained_layout=True, num=title)
+    fig, axes = plt.subplots(
+        nrows=k, ncols=1,
+        figsize=(d * 0.25, k * obs * 0.3),
+        sharex=True, constrained_layout=True, num=title
+    )
+
     if k == 1:
-        axes = [axes]
+        axes = [axes]  # type: ignore
 
     for _k in range(k):
         ax = axes[_k]
@@ -88,7 +101,8 @@ def vis_activations(f: torch.Tensor,
                         (j - 0.5, i - 0.5), 1, 1,
                         linewidth=1.0,
                         edgecolor='cyan',
-                        facecolor='none'
+                        facecolor='none',
+                        clip_on=False,
                     )
                     ax.add_patch(rect)
 
@@ -96,14 +110,18 @@ def vis_activations(f: torch.Tensor,
         count = (activate_idx == _k).sum().item()
         percent = int((count / (obs * d)) * 1000)/10
 
-        if mean_included and _k == k - 1:
-            s = f'Mean Rehearsal'
+        if last_row_name is not None and _k == k - 1:
+            s = last_row_name
         else:
             s = f'Rehearsal #{_k}'
 
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        ax.tick_params(left=False, bottom=False,
+                       labelleft=False, labelbottom=False)
+
         ax.set_ylabel(f'{s}\n({percent}% {mode_str})')
-        ax.set_xticks([])
-        ax.set_yticks([])
         ax.set_box_aspect(obs / d)
 
     # Colorbar
@@ -111,6 +129,28 @@ def vis_activations(f: torch.Tensor,
     cbar = fig.colorbar(mappable, ax=axes, location='right',
                         fraction=0.02, pad=0.02)
 
-    cbar.set_label(f'{label_str} (Color: {mode_str} / Gray: Others)')
+    cbar.set_label(
+        f'{label_str} (Color: {mode_str} / Background: {c.shape[0]} Colors)')
 
+    # save_as_subfigures(fig, axes, title)
     plt.show()
+
+
+def save_as_subfigures(fig: Figure,
+                       axes: list[Axes],
+                       base_name: str,
+                       path: str = './'):
+
+    fig.canvas.draw()
+
+    for _k, ax in enumerate(axes):
+        bbox = ax.get_tightbbox(fig.canvas.get_renderer())
+
+        if bbox is None:
+            continue
+
+        extent = bbox.transformed(fig.dpi_scale_trans.inverted())
+        extent = extent.padded(0.08)
+
+        save_path = os.path.join(path, f'{base_name}_rehearsal{_k}.png')
+        fig.savefig(save_path, bbox_inches=extent, dpi=300)
