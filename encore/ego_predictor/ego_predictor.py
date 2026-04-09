@@ -2,7 +2,7 @@
 @Author: Conghao Wong
 @Date: 2025-12-09 15:34:52
 @LastEditors: Conghao Wong
-@LastEditTime: 2026-04-03 10:21:36
+@LastEditTime: 2026-04-09 14:35:23
 @Github: https://cocoon2wong.github.io
 @Copyright 2025 Conghao Wong, All Rights Reserved.
 """
@@ -10,6 +10,7 @@
 import numpy as np
 import torch
 
+import qpid
 from qpid.model import layers, transformer
 from qpid.utils import get_mask
 
@@ -235,8 +236,31 @@ class EgoPredictor(torch.nn.Module):
 
             # NOTE that this is only used to conduct ablation discussions
             # after the model training.
-            if not training and self.fix_insight_kernels:
-                I = torch.mean(I, dim=0)[None]
+            # Consider using this in the playground mode with playground arg
+            # `--predict_all_neighbors`.
+            if not training and (s := self.fix_insight_kernels):
+                # Use the mean insight kernel
+                if s == 1:
+                    I = torch.mean(I, dim=0)[None]
+                    qpid.log("The batch-averaged insight kernel is used to "
+                             "replace all other agents' kernels.",
+                             level='warning')
+
+                # Use the most different insight kernel compared to the agent 0
+                elif s == 2:
+                    I_base = I[0:1]
+                    I_diff = torch.sum((I_base - I) ** 2, dim=(1, 2))
+                    I = I[I_diff.argmax()][None]
+
+                    agent_id = indices[0][I_diff.argmax()]
+                    qpid.log(f"Agent #{agent_id}'s insight kernel is used to "
+                             "replace all other agents' kernels.",
+                             level='warning')
+
+                else:
+                    qpid.log(f'Wrong `fix_insight_kernels` setting ({s})!',
+                             level='error', raiseError=ValueError)
+
                 I = torch.repeat_interleave(I, b, dim=0)
 
             y = self.rev(f_nei, R, I)           # (b, ins, T_f, d)
